@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="RemoteTargetsManager">
+    <targets>
+      <target name="krhougs@misc.local:22" type="ssh/sftp" uuid="db8cd519-9660-4df2-9c8a-1f6c5c5e8a09">
+        <config>
+          <option name="projectRootOnTarget" value="/home/krhougs/psn" />
+          <option name="serverName" value="krhougs@misc.local:22 password" />
+          <option name="useRsync" value="true" />
+        </config>
+        <ContributedStateBase type="RsLanguageRuntime">
+          <config>
+            <option name="cargoPath" value="/home/krhougs/.cargo/bin/cargo" />
+            <option name="cargoVersion" value="1.63.0 (fd9c4297c 2022-07-01)" />
+            <option name="rustcPath" value="/home/krhougs/.cargo/bin/rustc" />
+            <option name="rustcVersion" value="1.63.0 (4b91a6ea7 2022-08-08)" />
+          </config>
+        </ContributedStateBase>
+      </target>
+    </targets>
+  </component>
+</project>

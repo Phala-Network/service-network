@@ -1,0 +1,11 @@
+[package]
+name = "service_worker"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytes = "1.2.1"
+psn_peer = { version = "0.1.0", path = "../psn_peer" }
+tokio = { version = "1.21.0", features = ["full"] }
