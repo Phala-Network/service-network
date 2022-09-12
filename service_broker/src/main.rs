@@ -1,5 +1,8 @@
+pub mod inbound;
+pub mod outbound;
+
 use env_logger::{Builder as LoggerBuilder, Target};
-use log::{debug, info, trace};
+use log::{debug, info};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use psn_peer::config::{PeerConfig, PeerRole};
 use psn_peer::peer::{my_ipv4_interfaces, PeerManager, SERVICE_PSN_BROKER};

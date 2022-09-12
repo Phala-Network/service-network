@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use if_addrs::{IfAddr, Ifv4Addr};
-use log::{debug, info, trace};
+use log::{trace};
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use tokio::sync::RwLock;
 
@@ -67,7 +67,7 @@ impl PeerManager {
         }
     }
 
-    async fn update_local_worker_peer(ctx: WrappedAsyncRuntimeContext, info: ServiceInfo) {}
+    async fn update_local_worker_peer(_ctx: WrappedAsyncRuntimeContext, _info: ServiceInfo) {}
 
     pub async fn browse_brokers(ctx_w: WrappedAsyncRuntimeContext, _rt_w: WrappedRuntime) {
         let ctx_w_r = &ctx_w.clone();
@@ -87,7 +87,7 @@ impl PeerManager {
         }
     }
 
-    async fn update_broker_peer(ctx: WrappedAsyncRuntimeContext, service_info: ServiceInfo) {
+    async fn update_broker_peer(_ctx: WrappedAsyncRuntimeContext, service_info: ServiceInfo) {
         trace!("[update_broker_peer] Resolved a new service: {service_info:?}");
         // if service.domain != SERVICE_LOCAL_DOMAIN {
         //     return;
