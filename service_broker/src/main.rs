@@ -37,8 +37,7 @@ async fn main() {
 async fn register_service(ctx_w: WrappedAsyncRuntimeContext) {
     let ctx = ctx_w.clone();
     let ctx = ctx.read().await;
-    let config = &ctx.config.clone();
-    let config = config.read().await;
+    let config = &ctx.config;
     let common_config = &config.common;
     let broker_config = &config.broker;
     let broker_config = &broker_config.as_deref().unwrap();

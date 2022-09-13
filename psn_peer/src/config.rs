@@ -1,8 +1,6 @@
 use crate::peer::{SERVICE_PSN_BROKER, SERVICE_PSN_LOCAL_WORKER};
 use rand::distributions::{Alphanumeric, DistString};
 use serde::Deserialize;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 #[derive(Clone, Debug)]
 pub enum PeerRole {
@@ -147,5 +145,3 @@ fn default_pruntime_address() -> String {
 fn default_forwarder_socks_port() -> u16 {
     1982
 }
-
-pub type WrappedPeerConfig = Arc<RwLock<PeerConfig>>;
