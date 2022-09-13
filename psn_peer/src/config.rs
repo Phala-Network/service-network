@@ -17,8 +17,8 @@ pub struct PeerConfig {
     pub git_revision: String,
     pub instance_id: String,
     pub common: CommonConfig,
-    pub broker: Option<Box<BrokerConfig>>,
-    pub local_worker: Option<Box<LocalWorkerConfig>>,
+    pub broker: Option<BrokerConfig>,
+    pub local_worker: Option<LocalWorkerConfig>,
 }
 
 impl PeerConfig {
@@ -56,7 +56,7 @@ impl PeerConfig {
         };
         let broker = match role {
             PeerRole::PrBroker => match envy::prefixed("PSN_BROKER_").from_env::<BrokerConfig>() {
-                Ok(config) => Some(Box::new(config)),
+                Ok(config) => Some(config),
                 Err(error) => panic!("Error while parsing broker config: {:#?}", error),
             },
             _ => None,
@@ -64,7 +64,7 @@ impl PeerConfig {
         let local_worker = match role {
             PeerRole::PrLocalWorker => {
                 match envy::prefixed("PSN_LW_").from_env::<LocalWorkerConfig>() {
-                    Ok(config) => Some(Box::new(config)),
+                    Ok(config) => Some(config),
                     Err(error) => panic!("Error while parsing local worker config: {:#?}", error),
                 }
             }
