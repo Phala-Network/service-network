@@ -1,6 +1,6 @@
-use psn_peer::runtime::{WrappedAsyncRuntimeContext, WrappedRuntime};
+use psn_peer::runtime::WrappedAsyncRuntimeContext;
 
-async fn start(ctx_w: WrappedAsyncRuntimeContext, rt_w: WrappedRuntime) {
+async fn start(ctx_w: WrappedAsyncRuntimeContext) {
     let ctx = ctx_w.clone();
     let ctx = ctx.read().await;
     let config = &ctx.config.clone();
