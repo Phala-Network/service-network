@@ -17,6 +17,15 @@ pub struct PeerConfig {
     pub git_revision: String,
     pub instance_id: String,
     pub common: CommonConfig,
+    // Review comment:
+    // Without a full understanding on the design, I am not sure if it would be better to move the
+    // two config into the PeerRole, kinda like:
+    // pub enum PeerRole {
+    //     PrUndefined,
+    //     PrLocalWorker(LocalWorkerConfig),
+    //     PrRemoteWorker(RemoteWorkerConfig),
+    //     PrBroker(BrokerConfig),
+    // }
     pub broker: Option<BrokerConfig>,
     pub local_worker: Option<LocalWorkerConfig>,
 }
@@ -48,6 +57,9 @@ impl PeerConfig {
     }
 
     pub fn build_from_env(role: PeerRole, version: String, git_revision: String) -> Self {
+        // Review comment:
+        // It might be better to use clap to get the arguments from command line.
+        // clap can emit good help messages.
         let instance_id = Alphanumeric.sample_string(&mut rand::thread_rng(), 16);
 
         let common = match envy::prefixed("PSN_").from_env::<CommonConfig>() {
