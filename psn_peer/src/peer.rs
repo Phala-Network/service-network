@@ -7,8 +7,8 @@ use log::{trace};
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use tokio::sync::RwLock;
 
-use crate::config::PeerRole;
-use crate::runtime::{WrappedAsyncRuntimeContext, WrappedRuntime};
+use crate::config::{PeerConfig, PeerRole};
+use crate::runtime::{WrappedAsyncRuntimeContext};
 
 pub const SERVICE_PSN_LOCAL_WORKER: &'static str = "_psn-local-worker._tcp.local.";
 pub const SERVICE_PSN_BROKER: &'static str = "_psn-broker._tcp.local.";
@@ -39,15 +39,15 @@ impl PeerManager {
         }
     }
 
-    pub fn init_for_broker() -> Self {
-        Self::init(PeerRole::PrBroker)
+    pub fn init_for_broker(_config: &PeerConfig) -> Self {
+        Self::init(PeerRole::PrBroker(None))
     }
 
-    pub fn init_for_local_worker() -> Self {
-        Self::init(PeerRole::PrLocalWorker)
+    pub fn init_for_local_worker(_config: &PeerConfig) -> Self {
+        Self::init(PeerRole::PrLocalWorker(None))
     }
 
-    pub async fn browse_local_workers(ctx_w: WrappedAsyncRuntimeContext, _rt_w: WrappedRuntime) {
+    pub async fn browse_local_workers(ctx_w: WrappedAsyncRuntimeContext) {
         let ctx_w_r = &ctx_w.clone();
 
         let mdns = ServiceDaemon::new().expect("Failed to create daemon");
@@ -69,7 +69,7 @@ impl PeerManager {
 
     async fn update_local_worker_peer(_ctx: WrappedAsyncRuntimeContext, _info: ServiceInfo) {}
 
-    pub async fn browse_brokers(ctx_w: WrappedAsyncRuntimeContext, _rt_w: WrappedRuntime) {
+    pub async fn browse_brokers(ctx_w: WrappedAsyncRuntimeContext) {
         let ctx_w_r = &ctx_w.clone();
 
         let mdns = ServiceDaemon::new().expect("Failed to create daemon");

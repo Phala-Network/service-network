@@ -1,11 +1,9 @@
-use psn_peer::runtime::{WrappedAsyncRuntimeContext, WrappedRuntime};
+use psn_peer::runtime::WrappedAsyncRuntimeContext;
 
-async fn start(ctx_w: WrappedAsyncRuntimeContext, rt_w: WrappedRuntime) {
-    let ctx = ctx_w.clone();
+async fn start(ctx: WrappedAsyncRuntimeContext) {
     let ctx = ctx.read().await;
-    let config = &ctx.config.clone();
-    let config = config.read().await;
-    let config = config.broker.as_deref().unwrap();
+    let config = &ctx.config;
+    let config = config.broker();
 
-    let port = config.outbound_socks_port;
+    let _port = config.outbound_socks_port;
 }
