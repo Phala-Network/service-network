@@ -4,10 +4,10 @@ use serde::Deserialize;
 
 #[derive(Clone, Debug)]
 pub enum PeerRole {
-    PrUndefined = 0,
-    PrLocalWorker = 1,
-    PrRemoteWorker = 2,
-    PrBroker = 3,
+    PrUndefined,
+    PrLocalWorker(Option<LocalWorkerConfig>),
+    PrRemoteWorker,
+    PrBroker(Option<BrokerConfig>),
 }
 
 #[derive(Debug)]
@@ -17,25 +17,14 @@ pub struct PeerConfig {
     pub git_revision: String,
     pub instance_id: String,
     pub common: CommonConfig,
-    // Review comment:
-    // Without a full understanding on the design, I am not sure if it would be better to move the
-    // two config into the PeerRole, kinda like:
-    // pub enum PeerRole {
-    //     PrUndefined,
-    //     PrLocalWorker(LocalWorkerConfig),
-    //     PrRemoteWorker(RemoteWorkerConfig),
-    //     PrBroker(BrokerConfig),
-    // }
-    pub broker: Option<BrokerConfig>,
-    pub local_worker: Option<LocalWorkerConfig>,
 }
 
 impl PeerConfig {
     pub fn host_name(&self) -> String {
         let role = match self.role {
-            PeerRole::PrLocalWorker => "local_worker",
+            PeerRole::PrLocalWorker(_) => "local_worker",
             PeerRole::PrRemoteWorker => "remote_worker",
-            PeerRole::PrBroker => "broker",
+            PeerRole::PrBroker(_) => "broker",
             _ => panic!("Invalid app role!"),
         };
         format!(
@@ -48,8 +37,8 @@ impl PeerConfig {
 
     pub fn mdns_fullname(&self) -> String {
         let root = match self.role {
-            PeerRole::PrLocalWorker => SERVICE_PSN_LOCAL_WORKER,
-            PeerRole::PrBroker => SERVICE_PSN_BROKER,
+            PeerRole::PrLocalWorker(_) => SERVICE_PSN_LOCAL_WORKER,
+            PeerRole::PrBroker(_) => SERVICE_PSN_BROKER,
             _ => panic!("Invalid app role!"),
         }
         .to_string();
@@ -57,49 +46,51 @@ impl PeerConfig {
     }
 
     pub fn build_from_env(role: PeerRole, version: String, git_revision: String) -> Self {
-        // Review comment:
-        // It might be better to use clap to get the arguments from command line.
-        // clap can emit good help messages.
         let instance_id = Alphanumeric.sample_string(&mut rand::thread_rng(), 16);
 
         let common = match envy::prefixed("PSN_").from_env::<CommonConfig>() {
             Ok(config) => config,
             Err(error) => panic!("Error while parsing common config: {:#?}", error),
         };
-        let broker = match role {
-            PeerRole::PrBroker => match envy::prefixed("PSN_BROKER_").from_env::<BrokerConfig>() {
-                Ok(config) => Some(config),
+
+        let role_config = match role {
+            PeerRole::PrBroker(_) => match envy::prefixed("PSN_BROKER_").from_env::<BrokerConfig>() {
+                Ok(config) => PeerRole::PrBroker(Some(config)),
                 Err(error) => panic!("Error while parsing broker config: {:#?}", error),
             },
-            _ => None,
-        };
-        let local_worker = match role {
-            PeerRole::PrLocalWorker => {
+            PeerRole::PrLocalWorker(_) =>
                 match envy::prefixed("PSN_LW_").from_env::<LocalWorkerConfig>() {
-                    Ok(config) => Some(config),
+                    Ok(config) => PeerRole::PrLocalWorker(Some(config)),
                     Err(error) => panic!("Error while parsing local worker config: {:#?}", error),
-                }
-            }
-            _ => None,
-        };
-
-        if broker.is_none() && local_worker.is_none() {
-            panic!("No valid config provided!");
+                },
+            _ => panic!("Invalid role!"),
         };
 
         PeerConfig {
-            role,
             version,
             git_revision,
             instance_id,
             common,
-            broker,
-            local_worker,
+            role: role_config,
+        }
+    }
+
+    pub fn broker(&self) -> &BrokerConfig {
+        match &self.role {
+            PeerRole::PrBroker(config) => config.as_ref().unwrap(),
+            _ => panic!("Current peer is not a broker!")
+        }
+    }
+
+    pub fn local_worker(&self) -> &LocalWorkerConfig {
+        match &self.role {
+            PeerRole::PrLocalWorker(config) => config.as_ref().unwrap(),
+            _ => panic!("Current peer is not a broker!")
         }
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct CommonConfig {
     #[serde(default = "generate_instance_name")]
     pub instance_name: String,
@@ -107,7 +98,7 @@ pub struct CommonConfig {
     pub mgmt_port: u16,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct BrokerConfig {
     #[serde(default = "default_outbound_socks_port")]
     pub outbound_socks_port: u16,
@@ -118,7 +109,7 @@ pub struct BrokerConfig {
     pub cost: u8,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct LocalWorkerConfig {
     #[serde(default = "default_pruntime_address")]
     pub pruntime_address: String,

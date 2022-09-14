@@ -16,11 +16,11 @@ impl AsyncRuntimeContext {
             PeerRole::PrUndefined => {
                 panic!("Unsupported role!")
             }
-            PeerRole::PrLocalWorker => PeerManager::init_for_local_worker(),
+            PeerRole::PrLocalWorker(_) => PeerManager::init_for_local_worker(&config),
             PeerRole::PrRemoteWorker => {
                 panic!("Unsupported role!")
             }
-            PeerRole::PrBroker => PeerManager::init_for_broker(),
+            PeerRole::PrBroker(_) => PeerManager::init_for_broker(&config),
         };
         let peer_manager = Arc::new(RwLock::new(peer_manager));
         AsyncRuntimeContext {

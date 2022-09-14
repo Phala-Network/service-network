@@ -7,7 +7,7 @@ use log::{trace};
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use tokio::sync::RwLock;
 
-use crate::config::PeerRole;
+use crate::config::{PeerConfig, PeerRole};
 use crate::runtime::{WrappedAsyncRuntimeContext};
 
 pub const SERVICE_PSN_LOCAL_WORKER: &'static str = "_psn-local-worker._tcp.local.";
@@ -39,12 +39,12 @@ impl PeerManager {
         }
     }
 
-    pub fn init_for_broker() -> Self {
-        Self::init(PeerRole::PrBroker)
+    pub fn init_for_broker(_config: &PeerConfig) -> Self {
+        Self::init(PeerRole::PrBroker(None))
     }
 
-    pub fn init_for_local_worker() -> Self {
-        Self::init(PeerRole::PrLocalWorker)
+    pub fn init_for_local_worker(_config: &PeerConfig) -> Self {
+        Self::init(PeerRole::PrLocalWorker(None))
     }
 
     pub async fn browse_local_workers(ctx_w: WrappedAsyncRuntimeContext) {

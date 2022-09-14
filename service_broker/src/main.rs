@@ -23,15 +23,20 @@ async fn main() {
 
     info!("pSN service broker version {}-{}", version, git_revision);
 
-    let config = PeerConfig::build_from_env(PeerRole::PrBroker, version, git_revision);
+    let config = PeerConfig::build_from_env(PeerRole::PrBroker(None), version, git_revision);
     debug!("Staring service broker with config: {config:?}");
 
     let ctx = AsyncRuntimeContext::new_wrapped(config);
 
     let _ = tokio::join!(
-        register_service(ctx.clone()),
-        PeerManager::browse_brokers(ctx)
+        tokio::spawn(broker(ctx.clone())),
+        tokio::spawn(PeerManager::browse_brokers(ctx.clone()))
     );
+}
+
+async fn broker(ctx: WrappedAsyncRuntimeContext) {
+    register_service(ctx.clone()).await;
+    // todo
 }
 
 async fn register_service(ctx_w: WrappedAsyncRuntimeContext) {
@@ -39,7 +44,7 @@ async fn register_service(ctx_w: WrappedAsyncRuntimeContext) {
     let ctx = ctx.read().await;
     let config = &ctx.config;
     let common_config = &config.common;
-    let broker_config = &config.broker.as_ref().unwrap();
+    let broker_config = config.broker();
 
     let mdns = ServiceDaemon::new().expect("Could not create service daemon");
     let my_addrs: Vec<Ipv4Addr> = my_ipv4_interfaces().iter().map(|i| i.ip).collect();
