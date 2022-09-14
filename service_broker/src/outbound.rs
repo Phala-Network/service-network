@@ -5,18 +5,20 @@ use fast_socks5::util::target_addr::TargetAddr;
 use fast_socks5::{Result as SocksResult, SocksError};
 use futures::future::join_all;
 use futures::StreamExt;
-use log::{debug, info};
+use log::{debug, info, trace};
 use psn_peer::config::BrokerConfig;
 use psn_peer::runtime::WrappedAsyncRuntimeContext;
+use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use trust_dns_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
 
-use trust_dns_resolver::{TokioAsyncResolver, TokioHandle};
+use trust_dns_resolver::TokioAsyncResolver;
 
 type WrappedResolver = Arc<Mutex<TokioAsyncResolver>>;
 
@@ -124,7 +126,28 @@ where
         Err(_) => return Ok(()),
     };
 
-    Ok(())
+    let mut remote_stream = TcpStream::connect(resolved_target_addr).await?;
+
+    match tokio::io::copy_bidirectional(&mut remote_stream, &mut socks5_socket).await {
+        Ok(res) => {
+            debug!("socket transfer closed ({}, {})", res.0, res.1);
+            Ok(())
+        }
+        Err(err) => match err.kind() {
+            ErrorKind::NotConnected => {
+                debug!("socket transfer closed by client");
+                Ok(())
+            }
+            ErrorKind::ConnectionReset => {
+                debug!("socket transfer closed by downstream proxy");
+                Ok(())
+            }
+            _ => Err(SocksError::Other(anyhow!(
+                "socket transfer error: {:#}",
+                err
+            ))),
+        },
+    }
 }
 
 fn check_bogon(addr: SocketAddr) -> Result<SocketAddr> {
@@ -142,8 +165,8 @@ async fn nslookup(domain_name: String) -> Result<IpAddr> {
     let addr = addr
         .iter()
         .filter_map(|r| match r {
-            IpAddr::V4(a) => Some(r),
-            IpAddr::V6(a) => None, // TODO: Support IPV6
+            IpAddr::V4(_a) => Some(r),
+            IpAddr::V6(_a) => None, // TODO: Support IPV6
         })
         .collect::<Vec<_>>();
     if addr.len() <= 0 {

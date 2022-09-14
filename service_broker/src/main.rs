@@ -4,16 +4,11 @@ pub mod outbound;
 use env_logger::{Builder as LoggerBuilder, Target};
 use log::{debug, info, trace};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
-use psn_peer::config::{BrokerConfig, PeerConfig, PeerRole};
+use psn_peer::config::{PeerConfig, PeerRole};
 use psn_peer::peer::{my_ipv4_interfaces, PeerManager, SERVICE_PSN_BROKER};
 use psn_peer::runtime::{AsyncRuntimeContext, WrappedAsyncRuntimeContext};
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr};
-use std::str::FromStr;
-use tokio::runtime::Handle;
-use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
-use trust_dns_resolver::name_server::{GenericConnection, GenericConnectionProvider};
-use trust_dns_resolver::{AsyncResolver, Resolver};
+use std::net::Ipv4Addr;
 
 #[macro_use]
 extern crate lazy_static;
