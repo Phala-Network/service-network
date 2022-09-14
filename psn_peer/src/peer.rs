@@ -3,12 +3,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use if_addrs::{IfAddr, Ifv4Addr};
-use log::{trace};
+use log::trace;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use tokio::sync::RwLock;
 
 use crate::config::{PeerConfig, PeerRole};
-use crate::runtime::{WrappedAsyncRuntimeContext};
+use crate::runtime::WrappedAsyncRuntimeContext;
 
 pub const SERVICE_PSN_LOCAL_WORKER: &'static str = "_psn-local-worker._tcp.local.";
 pub const SERVICE_PSN_BROKER: &'static str = "_psn-broker._tcp.local.";

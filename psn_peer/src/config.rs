@@ -10,7 +10,7 @@ pub enum PeerRole {
     PrBroker(Option<BrokerConfig>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PeerConfig {
     pub role: PeerRole,
     pub version: String,
@@ -54,15 +54,17 @@ impl PeerConfig {
         };
 
         let role_config = match role {
-            PeerRole::PrBroker(_) => match envy::prefixed("PSN_BROKER_").from_env::<BrokerConfig>() {
+            PeerRole::PrBroker(_) => match envy::prefixed("PSN_BROKER_").from_env::<BrokerConfig>()
+            {
                 Ok(config) => PeerRole::PrBroker(Some(config)),
                 Err(error) => panic!("Error while parsing broker config: {:#?}", error),
             },
-            PeerRole::PrLocalWorker(_) =>
+            PeerRole::PrLocalWorker(_) => {
                 match envy::prefixed("PSN_LW_").from_env::<LocalWorkerConfig>() {
                     Ok(config) => PeerRole::PrLocalWorker(Some(config)),
                     Err(error) => panic!("Error while parsing local worker config: {:#?}", error),
-                },
+                }
+            }
             _ => panic!("Invalid role!"),
         };
 
@@ -78,14 +80,14 @@ impl PeerConfig {
     pub fn broker(&self) -> &BrokerConfig {
         match &self.role {
             PeerRole::PrBroker(config) => config.as_ref().unwrap(),
-            _ => panic!("Current peer is not a broker!")
+            _ => panic!("Current peer is not a broker!"),
         }
     }
 
     pub fn local_worker(&self) -> &LocalWorkerConfig {
         match &self.role {
             PeerRole::PrLocalWorker(config) => config.as_ref().unwrap(),
-            _ => panic!("Current peer is not a broker!")
+            _ => panic!("Current peer is not a broker!"),
         }
     }
 }
@@ -100,21 +102,27 @@ pub struct CommonConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct BrokerConfig {
-    #[serde(default = "default_outbound_socks_port")]
-    pub outbound_socks_port: u16,
+    #[serde(default = "default_outbound_bind_addresses")]
+    pub outbound_bind_addresses: Vec<String>,
     #[serde(default = "default_inbound_http_server_bind_address")]
     pub inbound_http_server_bind_address: Vec<String>,
     pub inbound_http_server_accessible_address_prefix: String,
     #[serde(default = "default_cost")]
     pub cost: u8,
+    #[serde(default = "default_doh_server_addresses")]
+    pub doh_server_addresses: Vec<String>,
+    #[serde(default = "default_doh_server_port")]
+    pub doh_server_port: u16,
+    #[serde(default = "default_doh_server_dns_name")]
+    pub doh_server_dns_name: String,
 }
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct LocalWorkerConfig {
     #[serde(default = "default_pruntime_address")]
     pub pruntime_address: String,
-    #[serde(default = "default_forwarder_socks_port")]
-    pub forwarder_socks_port: u16,
+    #[serde(default = "default_forwarder_bind_addresses")]
+    pub forwarder_bind_addresses: Vec<String>,
 }
 
 fn generate_instance_name() -> String {
@@ -129,8 +137,8 @@ fn default_mgmt_port() -> u16 {
     1919
 }
 
-fn default_outbound_socks_port() -> u16 {
-    1981
+fn default_outbound_bind_addresses() -> Vec<String> {
+    vec!["0.0.0.0:1981".to_string()]
 }
 
 fn default_inbound_http_server_bind_address() -> Vec<String> {
@@ -141,10 +149,27 @@ fn default_cost() -> u8 {
     10
 }
 
+fn default_doh_server_addresses() -> Vec<String> {
+    vec![
+        "8.8.8.8".to_string(),
+        "8.8.4.4".to_string(),
+        "2001:4860:4860::8888".to_string(),
+        "2001:4860:4860::8844".to_string(),
+    ]
+}
+
+fn default_doh_server_port() -> u16 {
+    443
+}
+
+fn default_doh_server_dns_name() -> String {
+    "dns.google".to_string()
+}
+
 fn default_pruntime_address() -> String {
     "http://127.0.0.1:8080".to_string()
 }
 
-fn default_forwarder_socks_port() -> u16 {
-    1982
+fn default_forwarder_bind_addresses() -> Vec<String> {
+    vec!["0.0.0.0:1982".to_string()]
 }
