@@ -7,14 +7,19 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.65"
+axum = "0.5.16"
 bytes = "1.2.1"
 env_logger = "0.9.0"
 fast-socks5 = { git = "https://github.com/Phala-Network/fast-socks5" }
 futures = "0.3.24"
+hyper = { version = "0.14.20", features = ["full"] }
 lazy_static = "1.4.0"
 libmdns = "0.7.1"
 log = "0.4.17"
 mdns-sd = "0.5.7"
 psn_peer = { version = "0.1.0", path = "../psn_peer" }
+reqwest = { version = "0.11.11", features = ["json"] }
+serde = "1.0.144"
+serde_json = "1.0.85"
 tokio = { version = "1.21.0", features = ["full"] }
 trust-dns-resolver = { version = "0.22.0", features = ["dns-over-https-rustls"] }

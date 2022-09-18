@@ -7,7 +7,7 @@ use futures::future::join_all;
 use futures::StreamExt;
 use log::{debug, info, trace};
 use psn_peer::config::BrokerConfig;
-use psn_peer::runtime::WrappedAsyncRuntimeContext;
+use psn_peer::runtime::{AsyncRuntimeContext, WrappedAsyncRuntimeContext};
 use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
@@ -51,8 +51,7 @@ lazy_static! {
     };
 }
 
-pub async fn start(ctx: WrappedAsyncRuntimeContext) {
-    let ctx = ctx.read().await;
+pub async fn start(ctx: &AsyncRuntimeContext) {
     let config = &ctx.config;
     let config = config.broker();
 
@@ -139,7 +138,7 @@ where
                 Ok(())
             }
             ErrorKind::ConnectionReset => {
-                debug!("socket transfer closed by downstream proxy");
+                debug!("socket transfer closed by downstream");
                 Ok(())
             }
             _ => Err(SocksError::Other(anyhow!(

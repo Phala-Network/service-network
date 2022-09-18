@@ -1,13 +1,15 @@
 use crate::config::{PeerConfig, PeerRole};
 use crate::peer::{PeerManager, WrappedPeerManager};
+use std::cell::RefCell;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub type WrappedAsyncRuntimeContext = Arc<RwLock<AsyncRuntimeContext>>;
 
+#[derive(Debug)]
 pub struct AsyncRuntimeContext {
     pub config: PeerConfig,
-    pub peer_manager: WrappedPeerManager,
+    pub peer_manager: PeerManager,
 }
 
 impl AsyncRuntimeContext {
@@ -22,7 +24,6 @@ impl AsyncRuntimeContext {
             }
             PeerRole::PrBroker(_) => PeerManager::init_for_broker(&config),
         };
-        let peer_manager = Arc::new(RwLock::new(peer_manager));
         AsyncRuntimeContext {
             config,
             peer_manager,

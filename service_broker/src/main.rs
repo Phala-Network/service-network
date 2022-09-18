@@ -1,7 +1,9 @@
 pub mod inbound;
+mod mgmt;
 pub mod outbound;
 
 use env_logger::{Builder as LoggerBuilder, Target};
+use futures::join;
 use log::{debug, info, trace};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use psn_peer::config::{PeerConfig, PeerRole};
@@ -23,6 +25,7 @@ lazy_static! {
         VERSION.to_string(),
         GIT_REVISION.to_string(),
     );
+    pub static ref RT_CTX: AsyncRuntimeContext = AsyncRuntimeContext::new(CONFIG.clone());
 }
 
 #[tokio::main]
@@ -32,33 +35,40 @@ async fn main() {
     builder.init();
 
     info!(
-        "pSN service broker version {:?}-{:?}",
+        "pSN service broker version {}-{}",
         VERSION.as_str(),
         GIT_REVISION.as_str()
     );
     debug!("Staring service broker with config: {:?}", &*CONFIG);
 
-    let ctx = AsyncRuntimeContext::new_wrapped(CONFIG.clone());
+    tokio::spawn(broker()).await.expect("Broker panic!");
+}
 
-    let _ = tokio::join!(
-        broker(ctx.clone()),
-        tokio::spawn(PeerManager::browse_brokers(ctx.clone()))
+async fn broker() {
+    let pm = &RT_CTX.peer_manager;
+    let mdns = ServiceDaemon::new().expect("Could not create service daemon");
+
+    register_service(&mdns, &RT_CTX).await;
+
+    tokio::join!(
+        mgmt::start_server(&RT_CTX, &CONFIG),
+        pm.browse_local_workers(&mdns, &RT_CTX),
+        outbound::start(&RT_CTX)
     );
 }
 
-async fn broker(ctx: WrappedAsyncRuntimeContext) {
-    register_service(ctx.clone()).await;
-    outbound::start(ctx.clone()).await;
-    trace!("11111");
-    // todo
-}
-
-async fn register_service(_ctx: WrappedAsyncRuntimeContext) {
+async fn register_service(mdns: &ServiceDaemon, _ctx: &AsyncRuntimeContext) {
     let common_config = &CONFIG.common;
     let broker_config = CONFIG.broker();
 
-    let mdns = ServiceDaemon::new().expect("Could not create service daemon");
     let my_addrs: Vec<Ipv4Addr> = my_ipv4_interfaces().iter().map(|i| i.ip).collect();
+
+    // in => instance name
+    // i => instance_id
+    // mp => management port
+    // c => cost
+    // oa => outbound_bind_addresses
+    // i => inbound_http_server_accessible_address_prefix
     let service_info = ServiceInfo::new(
         SERVICE_PSN_BROKER,
         common_config.instance_name.as_str(),
