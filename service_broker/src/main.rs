@@ -3,12 +3,12 @@ mod mgmt;
 pub mod outbound;
 
 use env_logger::{Builder as LoggerBuilder, Target};
-use futures::join;
-use log::{debug, info, trace};
+
+use log::{debug, info};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use psn_peer::config::{PeerConfig, PeerRole};
-use psn_peer::peer::{my_ipv4_interfaces, PeerManager, SERVICE_PSN_BROKER};
-use psn_peer::runtime::{AsyncRuntimeContext, WrappedAsyncRuntimeContext};
+use psn_peer::peer::{my_ipv4_interfaces, SERVICE_PSN_BROKER};
+use psn_peer::runtime::{AsyncRuntimeContext};
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 

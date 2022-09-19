@@ -2,18 +2,18 @@ mod pb;
 
 use anyhow::Result;
 use env_logger::{Builder as LoggerBuilder, Target};
-use log::{debug, info, trace, warn};
+use log::{debug, info, warn};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use psn_peer::config::{PeerConfig, PeerRole};
 use psn_peer::peer::{
-    my_ipv4_interfaces, BrokerPeer, BrokerPeerUpdate, BrokerPeerUpdateReceiver,
-    BrokerPeerUpdateSender, PeerManager, WrappedBrokerPeer, SERVICE_PSN_BROKER,
+    my_ipv4_interfaces, BrokerPeerUpdate, BrokerPeerUpdateReceiver,
+    BrokerPeerUpdateSender,
     SERVICE_PSN_LOCAL_WORKER,
 };
 use psn_peer::runtime::AsyncRuntimeContext;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
-use tokio::sync::mpsc::{Receiver, Sender};
+
 
 #[macro_use]
 extern crate lazy_static;

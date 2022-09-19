@@ -1,6 +1,6 @@
 use crate::config::{PeerConfig, PeerRole};
-use crate::peer::{PeerManager, WrappedPeerManager};
-use std::cell::RefCell;
+use crate::peer::{PeerManager};
+
 use std::sync::Arc;
 use tokio::sync::RwLock;
 

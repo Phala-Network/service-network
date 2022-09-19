@@ -4,8 +4,8 @@ use if_addrs::{IfAddr, Ifv4Addr};
 use log::{trace, warn};
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::{write, Debug, Display, Formatter};
-use std::net::SocketAddr;
+use std::fmt::{Debug, Formatter};
+
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::{Receiver as mpsc__Receiver, Sender as mpsc__Sender};
@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::config::{PeerConfig, PeerRole};
 use crate::peer::BrokerPeerUpdate::{BestPeerChanged, PeerStatusChanged};
-use crate::runtime::{AsyncRuntimeContext, WrappedAsyncRuntimeContext};
+use crate::runtime::{AsyncRuntimeContext};
 
 pub const SERVICE_PSN_LOCAL_WORKER: &'static str = "_psn-worker._tcp.local.";
 pub const SERVICE_PSN_BROKER: &'static str = "_psn-broker._tcp.local.";
@@ -86,7 +86,7 @@ impl BrokerPeerManager {
         let mgmt_addr = format!("http://{}:{}", mgmt_addr, mgmt_port);
 
         if self.map.contains_key(instance_name) {
-            let peer = self.map.get(instance_name).unwrap();
+            let _peer = self.map.get(instance_name).unwrap();
             // TODO: warn for id change
             return Ok(());
         }
@@ -154,7 +154,7 @@ impl BrokerPeerManager {
         v.sort_by(|a, b| a.1.cmp(&b.1));
         let v: Vec<_> = v
             .into_iter()
-            .map(|(n, cost)| self.map.get(n.as_str()))
+            .map(|(n, _cost)| self.map.get(n.as_str()))
             .collect();
         Some(v[0].unwrap().clone())
     }
