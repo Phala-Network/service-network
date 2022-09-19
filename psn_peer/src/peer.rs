@@ -2,15 +2,17 @@ use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
 use if_addrs::{IfAddr, Ifv4Addr};
 use log::{trace, warn};
-use mdns_sd::{Receiver, ServiceDaemon, ServiceEvent, ServiceInfo};
-use std::cell::RefCell;
+use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::{write, Debug, Display, Formatter};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::{Receiver as mpsc__Receiver, Sender as mpsc__Sender};
 use tokio::sync::{Mutex, RwLock};
 
 use crate::config::{PeerConfig, PeerRole};
+use crate::peer::BrokerPeerUpdate::{BestPeerChanged, PeerStatusChanged};
 use crate::runtime::{AsyncRuntimeContext, WrappedAsyncRuntimeContext};
 
 pub const SERVICE_PSN_LOCAL_WORKER: &'static str = "_psn-worker._tcp.local.";
@@ -24,8 +26,16 @@ pub const BROWSE_RESOLVE_TIMEOUT: Duration = Duration::from_secs(30);
 pub type TxtMap = HashMap<String, String>;
 pub type WrappedPeerManager = Arc<RwLock<PeerManager>>;
 pub type WrappedBrokerPeer = Arc<Mutex<BrokerPeer>>;
-pub type BrokerBestUpdateSender = mpsc__Sender<WrappedBrokerPeer>;
-pub type BrokerBestUpdateReceiver = mpsc__Receiver<WrappedBrokerPeer>;
+pub type BrokerPeerUpdateSender = mpsc__Sender<BrokerPeerUpdate>;
+pub type BrokerPeerUpdateReceiver = mpsc__Receiver<BrokerPeerUpdate>;
+pub type PeerStatusChangeCb = Box<dyn Fn(PeerStatus) + Send + Sync + 'static>;
+
+#[derive(Debug, Clone)]
+pub enum BrokerPeerUpdate {
+    None,
+    PeerStatusChanged(String, PeerStatus),
+    BestPeerChanged(String, String),
+}
 
 #[derive(Debug)]
 pub struct BrokerPeerManager {
@@ -43,7 +53,7 @@ impl BrokerPeerManager {
     async fn update_peer_with_service_info(
         &mut self,
         service_info: ServiceInfo,
-        tx: BrokerBestUpdateSender,
+        tx: BrokerPeerUpdateSender,
         _ctx: &AsyncRuntimeContext,
     ) -> Result<()> {
         trace!("Trying to update broker with service info: {service_info:?}");
@@ -69,6 +79,11 @@ impl BrokerPeerManager {
             ));
         }
         let cost = cost.unwrap();
+        let mgmt_port = service_info.get_port();
+        let mgmt_addr = service_info.get_addresses();
+        let mgmt_addr = mgmt_addr.iter().next().context("Invalid address").unwrap();
+        let mgmt_addr = mgmt_addr.to_string();
+        let mgmt_addr = format!("http://{}:{}", mgmt_addr, mgmt_port);
 
         if self.map.contains_key(instance_name) {
             let peer = self.map.get(instance_name).unwrap();
@@ -78,9 +93,19 @@ impl BrokerPeerManager {
 
         let map = &mut self.map;
 
-        let new_peer = BrokerPeer::new(cost, instance_name, id, service_info.clone());
-        map.insert(instance_name.to_string(), Arc::new(Mutex::new(new_peer)));
-        self.set_best_instance(tx).await;
+        let mut new_peer = BrokerPeer::new(
+            cost,
+            instance_name,
+            id,
+            service_info.clone(),
+            mgmt_addr,
+            tx.clone(),
+        );
+        new_peer.start_life_check().await;
+        let new_peer = Arc::new(Mutex::new(new_peer));
+        map.insert(instance_name.to_string(), new_peer.clone());
+
+        self.set_best_instance(tx.clone()).await;
 
         Ok(())
     }
@@ -92,15 +117,24 @@ impl BrokerPeerManager {
         }
     }
 
-    async fn set_best_instance(&mut self, tx: BrokerBestUpdateSender) {
+    async fn set_best_instance(&mut self, tx: BrokerPeerUpdateSender) -> Result<()> {
         if let Some(b) = self.get_best_instance().await {
             let b = b.clone();
             let bb = b.lock().await;
-            if let Err(e) = tx.send(b.clone()).await {
+            let oa = bb.service_info.get_properties();
+            let oa = oa.get("oa").context("Invalid outbound address").unwrap();
+            self.best_instance_name = Some(bb.instance_name.to_string());
+            if let Err(e) = tx
+                .send(BestPeerChanged(
+                    bb.instance_name.to_string(),
+                    format!("socks5://{}", oa),
+                ))
+                .await
+            {
                 warn!("[set_best_instance] Failed: {:?}", e)
             };
-            self.best_instance_name = Some(bb.instance_name.to_string());
-        }
+        };
+        Ok(())
     }
 
     async fn get_best_instance(&self) -> Option<WrappedBrokerPeer> {
@@ -126,29 +160,55 @@ impl BrokerPeerManager {
     }
 }
 
-pub trait PeerLifecycle {}
+pub trait PeerLifecycle {
+    fn set_status(&mut self, s: PeerStatus) -> ();
+}
 
-#[derive(Debug)]
 pub struct BrokerPeer {
     pub cost: u8,
     pub service_info: ServiceInfo,
     pub instance_name: String,
     pub id: String,
     pub status: PeerStatus,
+    pub mgmt_addr: String,
+    pub tx: BrokerPeerUpdateSender,
 }
 impl BrokerPeer {
-    pub fn new(cost: u8, instance_name: &str, id: &str, service_info: ServiceInfo) -> Self {
+    pub fn new(
+        cost: u8,
+        instance_name: &str,
+        id: &str,
+        service_info: ServiceInfo,
+        mgmt_addr: String,
+        tx: BrokerPeerUpdateSender,
+    ) -> Self {
         Self {
             cost,
             instance_name: instance_name.to_string(),
             id: id.to_string(),
             service_info,
+            mgmt_addr,
             status: PeerStatus::Init,
-            // status_change_cb: None,
+            tx,
         }
     }
-
-    // pub fn get_parent_pm(&self) -> &BrokerPeerManager {}
+    async fn set_status(&mut self, s: PeerStatus) {
+        let ns = s.clone();
+        self.status = s;
+        let tx = &self.tx.clone();
+        tx.clone()
+            .send(PeerStatusChanged(self.instance_name.to_string(), ns))
+            .await
+            .expect("Failed to send PeerStatusChanged")
+    }
+    async fn start_life_check(&mut self) {
+        self.set_status(PeerStatus::Start).await;
+    }
+}
+impl Debug for BrokerPeer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {:?}", self.instance_name, self.service_info)
+    }
 }
 
 #[derive(Debug)]
@@ -220,7 +280,7 @@ impl PeerManager {
     pub async fn browse_brokers(
         &self,
         mdns: &ServiceDaemon,
-        tx: BrokerBestUpdateSender,
+        tx: BrokerPeerUpdateSender,
         ctx: &AsyncRuntimeContext,
     ) {
         let receiver = mdns.browse(SERVICE_PSN_BROKER).expect("Failed to browse");
@@ -230,9 +290,8 @@ impl PeerManager {
                 ServiceEvent::ServiceResolved(info) => {
                     let broker = &self.broker.clone();
                     let mut broker = broker.lock().await;
-                    let _ = broker
-                        .update_peer_with_service_info(info, tx.clone(), ctx)
-                        .await;
+                    let tx = tx.clone();
+                    let _ = broker.update_peer_with_service_info(info, tx, ctx).await;
                     drop(broker);
                 }
                 other_event => {
@@ -246,6 +305,7 @@ impl PeerManager {
 #[derive(Debug, Clone)]
 pub enum PeerStatus {
     Init,
+    Start,
     Alive,
     Aiding,
     Dead,

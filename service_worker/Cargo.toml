@@ -17,8 +17,12 @@ lazy_static = "1.4.0"
 libmdns = "0.7.1"
 log = "0.4.17"
 mdns-sd = "0.5.7"
+prost = "0.11.0"
 psn_peer = { version = "0.1.0", path = "../psn_peer" }
 reqwest = { version = "0.11.11", features = ["json"] }
 serde = "1.0.144"
 serde_json = "1.0.85"
 tokio = { version = "1.21.0", features = ["full"] }
+
+[build-dependencies]
+prost-build = "0.11.1"

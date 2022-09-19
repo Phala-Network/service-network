@@ -1,12 +1,14 @@
+mod pb;
+
 use anyhow::Result;
 use env_logger::{Builder as LoggerBuilder, Target};
-use futures::join;
 use log::{debug, info, trace, warn};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use psn_peer::config::{PeerConfig, PeerRole};
 use psn_peer::peer::{
-    my_ipv4_interfaces, BrokerBestUpdateReceiver, BrokerBestUpdateSender, BrokerPeer, PeerManager,
-    WrappedBrokerPeer, SERVICE_PSN_BROKER, SERVICE_PSN_LOCAL_WORKER,
+    my_ipv4_interfaces, BrokerPeer, BrokerPeerUpdate, BrokerPeerUpdateReceiver,
+    BrokerPeerUpdateSender, PeerManager, WrappedBrokerPeer, SERVICE_PSN_BROKER,
+    SERVICE_PSN_LOCAL_WORKER,
 };
 use psn_peer::runtime::AsyncRuntimeContext;
 use std::collections::HashMap;
@@ -46,35 +48,53 @@ async fn main() {
 
     let _ = tokio::join!(
         tokio::spawn(handle_update_best_peer(update_best_peer_rx, CONFIG.clone())),
-        tokio::spawn(local_worker(update_best_peer_tx, &RT_CTX)),
+        tokio::spawn(local_worker(update_best_peer_tx.clone(), &RT_CTX)),
     );
 }
 
-async fn local_worker(tx: BrokerBestUpdateSender, ctx: &AsyncRuntimeContext) {
+async fn local_worker(tx: BrokerPeerUpdateSender, ctx: &AsyncRuntimeContext) {
     let mdns = ServiceDaemon::new().expect("Failed to create daemon");
     let pm = &RT_CTX.peer_manager;
     register_service(&mdns, &ctx).await;
-    pm.browse_brokers(&mdns, tx, &RT_CTX).await;
+    pm.browse_brokers(&mdns, tx.clone(), &RT_CTX).await;
 }
 
-async fn set_pruntime_network_with_peer(peer: WrappedBrokerPeer, config: PeerConfig) -> Result<()> {
-    let pmb = &RT_CTX.peer_manager.broker;
-    let _pmb = pmb.lock().await;
+async fn set_pruntime_network_with_peer(socks_url: String, _config: PeerConfig) -> Result<()> {
+    debug!(
+        "Trying to set pRuntime outbound with {}",
+        socks_url.as_str()
+    );
 
     Ok(())
 }
 
-async fn handle_update_best_peer(mut rx: BrokerBestUpdateReceiver, config: PeerConfig) {
-    while let Some(b) = rx.recv().await {
-        // todo: needs to be throttled
-        match tokio::spawn(set_pruntime_network_with_peer(b.clone(), config.clone())).await {
-            Ok(_) => {
-                let b = b.lock().await;
-                info!("Updated pRuntime networking: {:?}", b);
+async fn handle_update_best_peer(mut rx: BrokerPeerUpdateReceiver, config: PeerConfig) {
+    while let Some(u) = rx.recv().await {
+        match u {
+            BrokerPeerUpdate::PeerStatusChanged(name, status) => {
+                info!("Broker {} changed its status to {:?}", name, status);
             }
-            Err(err) => {
-                warn!("Failed to set pRuntime networking: {:?}", err);
+            BrokerPeerUpdate::BestPeerChanged(instance_name, socks_url) => {
+                // todo: needs to be throttled
+                match tokio::spawn(set_pruntime_network_with_peer(
+                    socks_url.to_string(),
+                    config.clone(),
+                ))
+                .await
+                {
+                    Ok(_) => {
+                        info!(
+                            "Updated pRuntime networking with ({}):{}",
+                            instance_name.as_str(),
+                            socks_url.as_str()
+                        );
+                    }
+                    Err(err) => {
+                        warn!("Failed to set pRuntime networking: {:?}", err);
+                    }
+                }
             }
+            _ => {}
         }
     }
 }
