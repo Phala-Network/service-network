@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::config::{PeerConfig, PeerRole};
 use crate::peer::BrokerPeerUpdate::{BestPeerChanged, PeerStatusChanged};
-use crate::runtime::{AsyncRuntimeContext};
+use crate::runtime::AsyncRuntimeContext;
 
 pub const SERVICE_PSN_LOCAL_WORKER: &'static str = "_psn-worker._tcp.local.";
 pub const SERVICE_PSN_BROKER: &'static str = "_psn-broker._tcp.local.";

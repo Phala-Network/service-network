@@ -1,7 +1,7 @@
 use log::info;
-use psn_peer::config::PeerConfig;
-use psn_peer::mgmt::{create_router, start_with_router};
-use psn_peer::runtime::AsyncRuntimeContext;
+use service_network::config::PeerConfig;
+use service_network::mgmt::{create_router, start_with_router};
+use service_network::runtime::AsyncRuntimeContext;
 
 pub async fn start_server(_ctx: &AsyncRuntimeContext, config: &'static PeerConfig) {
     tokio::spawn(async move {

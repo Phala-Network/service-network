@@ -1,19 +1,16 @@
-mod pb;
-
 use anyhow::Result;
 use env_logger::{Builder as LoggerBuilder, Target};
 use log::{debug, info, warn};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
-use psn_peer::config::{PeerConfig, PeerRole};
-use psn_peer::peer::{
-    my_ipv4_interfaces, BrokerPeerUpdate, BrokerPeerUpdateReceiver,
-    BrokerPeerUpdateSender,
+use phactory_api::pruntime_client::{new_pruntime_client, PRuntimeClient};
+use service_network::config::{PeerConfig, PeerRole};
+use service_network::peer::{
+    my_ipv4_interfaces, BrokerPeerUpdate, BrokerPeerUpdateReceiver, BrokerPeerUpdateSender,
     SERVICE_PSN_LOCAL_WORKER,
 };
-use psn_peer::runtime::AsyncRuntimeContext;
+use service_network::runtime::AsyncRuntimeContext;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
-
 
 #[macro_use]
 extern crate lazy_static;
@@ -29,6 +26,8 @@ lazy_static! {
         GIT_REVISION.to_string(),
     );
     pub static ref RT_CTX: AsyncRuntimeContext = AsyncRuntimeContext::new(CONFIG.clone());
+    pub static ref PRUNTIME_CLIENT: PRuntimeClient =
+        new_pruntime_client(CONFIG.local_worker().pruntime_address.to_string());
 }
 
 #[tokio::main]
@@ -43,6 +42,11 @@ async fn main() {
         GIT_REVISION.as_str()
     );
     debug!("Staring local worker broker with config: {:?}", &*CONFIG);
+    let info = PRUNTIME_CLIENT
+        .get_info(())
+        .await
+        .expect("Failed to get info from pRuntime.");
+    debug!("{:?}", info);
 
     let (update_best_peer_tx, update_best_peer_rx) = tokio::sync::mpsc::channel(32);
 

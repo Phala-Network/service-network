@@ -1,0 +1,52 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "service_broker",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=service_broker",
+          "--package=service_broker"
+        ],
+        "filter": {
+          "name": "service_broker",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PSN_BROKER_INBOUND_HTTP_SERVER_ACCESSIBLE_ADDRESS_PREFIX": "http://example.com",
+        "RUST_LOG": "psn_peer=trace,service_broker=trace"
+      }
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "service_worker",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=service_worker",
+          "--package=service_worker"
+        ],
+        "filter": {
+          "name": "service_worker",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "RUST_LOG": "psn_peer=debug,service_worker=debug",
+        "PSN_LW_PRUNTIME_ADDRESS": "http://10.96.89.111:8000"
+      }
+    },
+  ]
+}
