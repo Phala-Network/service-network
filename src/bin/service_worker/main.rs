@@ -9,8 +9,15 @@ use service_network::peer::{
     SERVICE_PSN_LOCAL_WORKER,
 };
 use service_network::runtime::AsyncRuntimeContext;
+use service_network::worker::runtime::WorkerRuntimeChannelMessage::{
+    ShouldUpdateInfo, ShouldUpdateStatus,
+};
+use service_network::worker::runtime::{
+    WorkerRuntime, WorkerRuntimeChannelMessage, WorkerRuntimeStatus, WrappedWorkerRuntime,
+};
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 #[macro_use]
 extern crate lazy_static;
@@ -28,6 +35,7 @@ lazy_static! {
     pub static ref RT_CTX: AsyncRuntimeContext = AsyncRuntimeContext::new(CONFIG.clone());
     pub static ref PRUNTIME_CLIENT: PRuntimeClient =
         new_pruntime_client(CONFIG.local_worker().pruntime_address.to_string());
+    pub static ref WR: WrappedWorkerRuntime = WorkerRuntime::new_wrapped(&RT_CTX, &PRUNTIME_CLIENT);
 }
 
 #[tokio::main]
@@ -42,25 +50,70 @@ async fn main() {
         GIT_REVISION.as_str()
     );
     debug!("Staring local worker broker with config: {:?}", &*CONFIG);
-    let info = PRUNTIME_CLIENT
-        .get_info(())
-        .await
-        .expect("Failed to get info from pRuntime.");
-    debug!("{:?}", info);
 
     let (update_best_peer_tx, update_best_peer_rx) = tokio::sync::mpsc::channel(32);
+    let (rt_tx, rt_rx) = tokio::sync::mpsc::channel(1024);
 
-    let _ = tokio::join!(
-        tokio::spawn(handle_update_best_peer(update_best_peer_rx, CONFIG.clone())),
-        tokio::spawn(local_worker(update_best_peer_tx.clone(), &RT_CTX)),
-    );
+    let handle1 = tokio::spawn(handle_update_best_peer(update_best_peer_rx, CONFIG.clone()));
+    let handle2 = tokio::spawn(runtime(update_best_peer_tx.clone(), rt_tx.clone(), rt_rx));
+
+    let wr = WR.read().await;
+    let pr = wr.prc;
+    let info = pr
+        .get_info(())
+        .await
+        .expect("Failed to get info from pruntime");
+    drop(wr);
+    let _ = rt_tx
+        .clone()
+        .send(WorkerRuntimeChannelMessage::ShouldUpdateInfo(info))
+        .await;
+
+    let _ = tokio::join!(handle1, handle2);
 }
 
-async fn local_worker(tx: BrokerPeerUpdateSender, ctx: &AsyncRuntimeContext) {
+async fn local_worker(
+    tx: BrokerPeerUpdateSender,
+    rt_tx: Sender<WorkerRuntimeChannelMessage>,
+    ctx: &AsyncRuntimeContext,
+) {
     let mdns = ServiceDaemon::new().expect("Failed to create daemon");
     let pm = &RT_CTX.peer_manager;
     register_service(&mdns, &ctx).await;
-    pm.browse_brokers(&mdns, tx.clone(), &RT_CTX).await;
+    pm.browse_brokers(&mdns, tx.clone(), rt_tx.clone(), &RT_CTX)
+        .await;
+}
+
+async fn runtime(
+    tx: BrokerPeerUpdateSender,
+    rt_tx: Sender<WorkerRuntimeChannelMessage>,
+    mut rx: Receiver<WorkerRuntimeChannelMessage>,
+) {
+    while let Some(msg) = rx.recv().await {
+        match msg {
+            ShouldUpdateInfo(i) => {
+                let mut wr = WR.write().await;
+                wr.handle_update_info(i);
+                if matches!(wr.status, WorkerRuntimeStatus::Starting) {
+                    let rt_tx = rt_tx.clone();
+                    let _ = rt_tx
+                        .send(WorkerRuntimeChannelMessage::ShouldUpdateStatus(
+                            WorkerRuntimeStatus::WaitingForBroker,
+                        ))
+                        .await;
+                }
+                drop(wr);
+            }
+            ShouldUpdateStatus(s) => {
+                let mut wr = WR.write().await;
+                wr.handle_update_status(s);
+                if matches!(wr.status, WorkerRuntimeStatus::WaitingForBroker) {
+                    tokio::spawn(local_worker(tx.clone(), rt_tx.clone(), &RT_CTX));
+                }
+                drop(wr);
+            }
+        }
+    }
 }
 
 async fn set_pruntime_network_with_peer(socks_url: String, _config: PeerConfig) -> Result<()> {

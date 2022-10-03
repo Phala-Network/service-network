@@ -5,6 +5,7 @@ use fast_socks5::util::target_addr::TargetAddr;
 use fast_socks5::{Result as SocksResult, SocksError};
 use futures::future::join_all;
 use futures::StreamExt;
+use lazy_static::lazy_static;
 use log::{debug, info};
 use service_network::config::BrokerConfig;
 use service_network::runtime::AsyncRuntimeContext;

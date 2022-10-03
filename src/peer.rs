@@ -9,15 +9,16 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::{Receiver as mpsc__Receiver, Sender as mpsc__Sender};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{mpsc::Sender as MpscSender, Mutex, RwLock};
 
 use crate::config::{PeerConfig, PeerRole};
 use crate::peer::BrokerPeerUpdate::{BestPeerChanged, PeerStatusChanged};
 use crate::runtime::AsyncRuntimeContext;
+use crate::worker::runtime::WorkerRuntimeChannelMessage;
 
-pub const SERVICE_PSN_LOCAL_WORKER: &'static str = "_psn-worker._tcp.local.";
-pub const SERVICE_PSN_BROKER: &'static str = "_psn-broker._tcp.local.";
-pub const SERVICE_LOCAL_DOMAIN: &'static str = "local.";
+pub const SERVICE_PSN_LOCAL_WORKER: &str = "_psn-worker._tcp.local.";
+pub const SERVICE_PSN_BROKER: &str = "_psn-broker._tcp.local.";
+pub const SERVICE_LOCAL_DOMAIN: &str = "local.";
 
 pub const BROWSE_LOOP_SLEEP_DURATION: Duration = Duration::from_secs(300);
 pub const BROWSE_SEARCH_INTERVAL: Duration = Duration::from_secs(120);
@@ -281,6 +282,7 @@ impl PeerManager {
         &self,
         mdns: &ServiceDaemon,
         tx: BrokerPeerUpdateSender,
+        rt_tx: MpscSender<WorkerRuntimeChannelMessage>,
         ctx: &AsyncRuntimeContext,
     ) {
         let receiver = mdns.browse(SERVICE_PSN_BROKER).expect("Failed to browse");

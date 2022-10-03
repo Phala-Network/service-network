@@ -1,9 +1,8 @@
-pub mod inbound;
 mod mgmt;
-pub mod outbound;
+mod outbound;
 
 use env_logger::{Builder as LoggerBuilder, Target};
-
+use lazy_static::lazy_static;
 use log::{debug, info};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use service_network::config::{PeerConfig, PeerRole};

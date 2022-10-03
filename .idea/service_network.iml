@@ -5,7 +5,7 @@
       <sourceFolder url="file://$MODULE_DIR$/psn_peer/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/bin/service_broker/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/src/bin/service_worker/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/worker/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
