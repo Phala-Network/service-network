@@ -21,6 +21,7 @@
       "args": [],
       "cwd": "${workspaceFolder}",
       "env": {
+        "PSN_MGMT_PORT": "1918",
         "PSN_BROKER_INBOUND_HTTP_SERVER_ACCESSIBLE_ADDRESS_PREFIX": "http://example.com",
         "RUST_LOG": "service_network=trace,service_broker=trace"
       }

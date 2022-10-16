@@ -30,5 +30,6 @@ phactory-api = { git = "https://github.com/Phala-Network/phala-blockchain", vers
 prost = "0.11.0"
 fast-socks5 = { git = "https://github.com/Phala-Network/fast-socks5" }
 trust-dns-resolver = { version = "0.22.0", features = ["dns-over-https-rustls"] }
+rust-fsm = "0.6.0"
 
 [workspace]
