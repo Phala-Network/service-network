@@ -1,24 +1,24 @@
 pub mod broker;
 pub mod local_worker;
 
-use crate::peer::broker::{BrokerPeer, BrokerPeerManager};
-use anyhow::{anyhow, Context, Result};
-use futures::future::join_all;
-use if_addrs::{IfAddr, Ifv4Addr};
-use log::{trace, warn};
-use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
-use std::collections::{BTreeMap, HashMap};
-use std::fmt::{Debug, Formatter};
+use crate::peer::broker::{BrokerPeerManager};
 
-use broker::BrokerPeerUpdate;
+
+use if_addrs::{IfAddr, Ifv4Addr};
+use log::{trace};
+use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+use std::collections::{HashMap};
+use std::fmt::{Debug};
+
+
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::{Receiver as mpsc__Receiver, Sender as mpsc__Sender};
-use tokio::sync::{mpsc::Sender as MpscSender, Mutex, RwLock};
+
+use tokio::sync::{Mutex, RwLock};
 
 use crate::config::{PeerConfig, PeerRole};
 use crate::runtime::AsyncRuntimeContext;
-use broker::BrokerPeerUpdate::{BestPeerChanged, PeerStatusChanged};
+
 use local_worker::{BrokerPeerUpdateSender, LocalPeerWorkerManager};
 
 pub const SERVICE_PSN_LOCAL_WORKER: &str = "_psn-worker._tcp.local.";

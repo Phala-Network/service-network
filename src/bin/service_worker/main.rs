@@ -1,21 +1,18 @@
+pub mod runtime;
+
 use crate::runtime::*;
 use crate::WorkerRuntimeChannelMessage::*;
-use anyhow::Result;
 use env_logger::{Builder as LoggerBuilder, Target};
 use futures::future::try_join_all;
-use log::{debug, info, warn};
+use log::{debug, info};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use phactory_api::pruntime_client::{new_pruntime_client, PRuntimeClient};
 use service_network::config::{PeerConfig, PeerRole};
-use service_network::peer::broker::BrokerPeerUpdate;
-use service_network::peer::local_worker::{BrokerPeerUpdateReceiver, BrokerPeerUpdateSender};
+use service_network::peer::local_worker::BrokerPeerUpdateSender;
 use service_network::peer::{my_ipv4_interfaces, SERVICE_PSN_LOCAL_WORKER};
 use service_network::runtime::AsyncRuntimeContext;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
-use tokio::sync::mpsc::Sender;
-
-pub mod runtime;
 
 #[macro_use]
 extern crate lazy_static;

@@ -1,15 +1,23 @@
+mod local_worker;
 mod mgmt;
 mod outbound;
 
+use crate::local_worker::{
+    local_worker_manager, LocalWorkerManagerChannelMessage, LocalWorkerManagerChannelMessageSender,
+};
+use crate::LocalWorkerManagerChannelMessage::ShouldCheckPeerHealth;
 use env_logger::{Builder as LoggerBuilder, Target};
-use lazy_static::lazy_static;
+use futures::future::try_join_all;
 use log::{debug, info};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
-use service_network::config::{PeerConfig, PeerRole};
+use service_network::config::{PeerConfig, PeerRole, BROKER_HEALTH_CHECK_INTERVAL};
 use service_network::peer::{my_ipv4_interfaces, SERVICE_PSN_BROKER};
 use service_network::runtime::AsyncRuntimeContext;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
+use std::time::Duration;
+use tokio::sync::mpsc::channel;
+use tokio::time::sleep;
 
 #[macro_use]
 extern crate lazy_static;
@@ -40,20 +48,23 @@ async fn main() {
     );
     debug!("Staring service broker with config: {:?}", &*CONFIG);
 
-    tokio::spawn(broker()).await.expect("Broker panic!");
+    let (tx, rx) = channel::<LocalWorkerManagerChannelMessage>(1024);
+
+    let async_handles = vec![
+        tokio::spawn(broker()),
+        tokio::spawn(outbound::start(&RT_CTX)),
+        tokio::spawn(mgmt::start_server(tx.clone(), &RT_CTX, &CONFIG)),
+        tokio::spawn(local_worker_manager(tx.clone(), rx)),
+        tokio::spawn(check_peer_health_loop(tx.clone())),
+    ];
+    try_join_all(async_handles).await.expect("main failed");
 }
 
 async fn broker() {
-    let pm = &RT_CTX.peer_manager;
+    // let pm = &RT_CTX.peer_manager;
     let mdns = ServiceDaemon::new().expect("Could not create service daemon");
-
     register_service(&mdns, &RT_CTX).await;
-
-    tokio::join!(
-        mgmt::start_server(&RT_CTX, &CONFIG),
-        pm.browse_local_workers(&mdns, &RT_CTX),
-        outbound::start(&RT_CTX)
-    );
+    // pm.browse_local_workers(&mdns, &RT_CTX).await;
 }
 
 async fn register_service(mdns: &ServiceDaemon, _ctx: &AsyncRuntimeContext) {
@@ -67,7 +78,7 @@ async fn register_service(mdns: &ServiceDaemon, _ctx: &AsyncRuntimeContext) {
     // mp => management port
     // c => cost
     // oa => outbound_bind_addresses
-    // i => inbound_http_server_accessible_address_prefix
+    // o => inbound_http_server_accessible_address_prefix
     let service_info = ServiceInfo::new(
         SERVICE_PSN_BROKER,
         common_config.instance_name.as_str(),
@@ -101,4 +112,11 @@ async fn register_service(mdns: &ServiceDaemon, _ctx: &AsyncRuntimeContext) {
         CONFIG.mdns_fullname(),
         &service_info
     );
+}
+
+async fn check_peer_health_loop(tx: LocalWorkerManagerChannelMessageSender) {
+    loop {
+        sleep(Duration::from_millis(BROKER_HEALTH_CHECK_INTERVAL as u64)).await;
+        let _ = tx.clone().send(ShouldCheckPeerHealth).await;
+    }
 }

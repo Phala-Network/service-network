@@ -2,6 +2,11 @@ use crate::peer::{SERVICE_PSN_BROKER, SERVICE_PSN_LOCAL_WORKER};
 use rand::distributions::{Alphanumeric, DistString};
 use serde::Deserialize;
 
+pub static BROKER_HEALTH_CHECK_INTERVAL: u16 = 20000;
+pub static BROKER_PEER_LOST_COUNT: u8 = 3;
+pub static BROKER_PEER_DEAD_COUNT: u8 = 10;
+pub static LOCAL_WORKER_KEEPALIVE_INTERVAL: u16 = 6000;
+
 #[derive(Clone, Debug)]
 pub enum PeerRole {
     PrUndefined,

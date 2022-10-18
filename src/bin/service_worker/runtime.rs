@@ -1,15 +1,14 @@
 use crate::WorkerRuntimeStatus::*;
 use crate::{ShouldLockBroker, ShouldSetBrokerFailed, ShouldUpdateStatus, RT_CTX, WR};
 use anyhow::{anyhow, Context, Result};
-use log::{debug, error, info, warn};
+use log::{debug, info};
 use mdns_sd::ServiceDaemon;
 use phactory_api::prpc::{NetworkConfig, PhactoryInfo};
 use phactory_api::pruntime_client::PRuntimeClient;
 use service_network::peer::local_worker::{BrokerPeerUpdateSender, WrappedBrokerPeer};
 use service_network::runtime::AsyncRuntimeContext;
 use std::fmt::Debug;
-use std::net::Ipv4Addr;
-use std::str::FromStr;
+
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
@@ -52,6 +51,7 @@ pub struct WorkerRuntime {
     pub last_info: Option<PhactoryInfo>,
     pub pr_rpc_port: u32,
     pub peer_browser_started: bool,
+    pub public_key: Option<String>,
     pub best_broker: Option<WrappedBrokerPeer>,
     pub best_broker_name: Option<String>,
 }
@@ -66,6 +66,7 @@ impl WorkerRuntime {
             last_info: None,
             pr_rpc_port: 0,
             peer_browser_started: false,
+            public_key: None,
             best_broker: None,
             best_broker_name: None,
         }
@@ -85,8 +86,32 @@ impl WorkerRuntime {
     ) {
         let ir = (&info).clone();
         let current_status = (&self.status).clone();
-        let pr_rpc_port = &ir.network_status.unwrap_or_default().public_rpc_port;
 
+        let initialized = &ir.initialized;
+        let initialized = *initialized;
+        if !initialized {
+            let _ = rt_tx
+                .clone()
+                .send(WorkerRuntimeChannelMessage::ShouldSetPRuntimeFailed(
+                    "pRuntime not initialized!".to_string(),
+                ))
+                .await;
+            return;
+        }
+
+        let public_key = &ir.public_key;
+        if public_key.is_none() {
+            let _ = rt_tx
+                .clone()
+                .send(WorkerRuntimeChannelMessage::ShouldSetPRuntimeFailed(
+                    "pRuntime has invalid public key!".to_string(),
+                ))
+                .await;
+        }
+        let public_key = public_key.as_ref().unwrap().to_string();
+
+        let pr_rpc_port = &ir.network_status.unwrap_or_default();
+        let pr_rpc_port = pr_rpc_port.public_rpc_port;
         if pr_rpc_port.is_none() {
             self.pr_rpc_port = 0;
             let rt_tx = rt_tx.clone();
@@ -99,6 +124,7 @@ impl WorkerRuntime {
             return;
         }
 
+        self.public_key = Some(public_key);
         self.pr_rpc_port = pr_rpc_port.unwrap();
         self.last_info = Some(info.clone());
 
@@ -173,6 +199,7 @@ impl WorkerRuntime {
                     tokio::spawn(start_peer_browser(tx.clone(), &RT_CTX));
                     self.peer_browser_started = true;
                 }
+                sleep(Duration::from_secs(3)).await;
                 tokio::spawn(wait_for_broker_peer(rt_tx.clone()));
             }
             PendingProvision => {

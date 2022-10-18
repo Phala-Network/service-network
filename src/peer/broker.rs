@@ -1,7 +1,7 @@
 use crate::peer::PeerStatus;
 use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
-use log::{trace, warn};
+use log::{trace};
 use mdns_sd::ServiceInfo;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
