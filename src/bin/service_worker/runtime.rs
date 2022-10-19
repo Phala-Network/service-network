@@ -468,15 +468,23 @@ pub async fn check_current_broker_health(rt_tx: WorkerRuntimeChannelMessageSende
             let res = res.json::<MyIdentity>().await;
             match res {
                 Ok(res) => {
-                    info!("111 {:?}", res)
+                    debug!("Broker responding keepalive: {:?}", res)
                 }
                 Err(err) => {
-                    error!("Broker failed on processing keepalive: {}", err)
+                    error!("Broker failed on processing keepalive: {}", &err);
+                    let _ = rt_tx
+                        .clone()
+                        .send(ShouldSetBrokerFailed(format!("{}", err)))
+                        .await;
                 }
             }
         }
         Err(err) => {
-            error!("Failed to send keepalive to current broker: {}", err)
+            error!("Failed to send keepalive to current broker: {}", &err);
+            let _ = rt_tx
+                .clone()
+                .send(ShouldSetBrokerFailed(format!("{}", err)))
+                .await;
         }
     };
 }
