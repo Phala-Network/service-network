@@ -1,12 +1,16 @@
 use crate::local_worker::KnownLocalWorkerStatus::*;
 use crate::local_worker::LocalWorkerManagerChannelMessage::*;
-use crate::mgmt::local_worker::LocalWorkerIdentity;
-use log::{error, info, warn};
+use crate::LW_MAP;
+use log::{debug, error, info, warn};
 use service_network::config::{BROKER_PEER_DEAD_COUNT, BROKER_PEER_LOST_COUNT};
+use service_network::mgmt_types::LocalWorkerIdentity;
 use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::RwLock;
+use urlparse::{urlparse, GetQuery};
 
 pub enum LocalWorkerManagerChannelMessage {
     ShouldCheckPeerHealth,
@@ -17,21 +21,24 @@ pub type LocalWorkerManagerChannelMessageSender = Sender<LocalWorkerManagerChann
 pub type LocalWorkerManagerChannelMessageReceiver = Receiver<LocalWorkerManagerChannelMessage>;
 
 pub type LocalWorkerMap = BTreeMap<String, KnownLocalWorker>;
+pub type WrappedLocalWorkerMap = Arc<RwLock<LocalWorkerMap>>;
 
 pub async fn local_worker_manager(
     _tx: LocalWorkerManagerChannelMessageSender,
     mut rx: LocalWorkerManagerChannelMessageReceiver,
 ) {
     let mut lw_vec_keys: Vec<String> = Vec::new();
-    let mut lw_map: LocalWorkerMap = BTreeMap::new();
+    let lw_map_lock = LW_MAP.clone();
 
     loop {
         while let Some(msg) = rx.recv().await {
             match msg {
                 ShouldCheckPeerHealth => {
-                    check_peer_health(&mut lw_map, &lw_vec_keys);
+                    check_peer_health((&lw_map_lock).clone(), &lw_vec_keys).await;
                 }
                 ReceivedKeepAlive(lw) => {
+                    let lw_map = (&lw_map_lock).clone();
+                    let mut lw_map = lw_map.write().await;
                     let key = lw.public_key.as_str();
                     let klw = lw_map.get_mut(key);
                     if let Some(mut klw) = klw {
@@ -46,6 +53,7 @@ pub async fn local_worker_manager(
                     } else {
                         lw_vec_keys = create_local_worker(&mut lw_map, lw);
                     }
+                    drop(lw_map);
                 }
             }
         }
@@ -62,14 +70,9 @@ fn create_local_worker(lw_map: &mut LocalWorkerMap, lw: LocalWorkerIdentity) -> 
     } = lw;
 
     let key = public_key.clone();
-    let address = Ipv4Addr::from_str(address_string.as_str()).expect(
-        format!(
-            "Invalid IP address for worker {}: {}",
-            instance_name.as_str(),
-            address_string.as_str()
-        )
-        .as_str(),
-    );
+    let uri = urlparse(address_string.as_str());
+    let hostname = uri.hostname.unwrap();
+    let forwarder_port = uri.port.unwrap();
 
     info!(
         "Hello new worker({}/{}).",
@@ -79,7 +82,8 @@ fn create_local_worker(lw_map: &mut LocalWorkerMap, lw: LocalWorkerIdentity) -> 
 
     let ret = KnownLocalWorker {
         status: Active,
-        address,
+        hostname,
+        forwarder_port,
         instance_name,
         instance_id,
         address_string,
@@ -88,6 +92,7 @@ fn create_local_worker(lw_map: &mut LocalWorkerMap, lw: LocalWorkerIdentity) -> 
         lost_count: 0,
         lost_mark: false,
     };
+    debug!("KnownLocalWorker: {:?}", &ret);
     lw_map.insert(key, ret);
     lw_map
         .iter()
@@ -150,7 +155,8 @@ fn update_local_worker(klw: &mut KnownLocalWorker, lw: LocalWorkerIdentity) {
     }
 }
 
-fn check_peer_health(lw_map: &mut LocalWorkerMap, lw_vec_keys: &Vec<String>) {
+async fn check_peer_health(lw_map_lock: WrappedLocalWorkerMap, lw_vec_keys: &Vec<String>) {
+    let mut lw_map = lw_map_lock.write().await;
     let _ = lw_vec_keys.iter().for_each(|k| {
         let lw = lw_map.get_mut(k);
         if let Some(mut lw) = lw {
@@ -180,6 +186,7 @@ fn check_peer_health(lw_map: &mut LocalWorkerMap, lw_vec_keys: &Vec<String>) {
             }
         }
     });
+    drop(lw_map);
 }
 
 #[derive(Clone, Debug)]
@@ -192,7 +199,8 @@ pub enum KnownLocalWorkerStatus {
 #[derive(Clone, Debug)]
 pub struct KnownLocalWorker {
     pub status: KnownLocalWorkerStatus,
-    pub address: Ipv4Addr,
+    pub hostname: String,
+    pub forwarder_port: u16,
     pub address_string: String,
     pub public_port: u16,
     pub public_key: String,

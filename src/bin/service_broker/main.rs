@@ -4,19 +4,22 @@ mod outbound;
 
 use crate::local_worker::{
     local_worker_manager, LocalWorkerManagerChannelMessage, LocalWorkerManagerChannelMessageSender,
+    WrappedLocalWorkerMap,
 };
 use crate::LocalWorkerManagerChannelMessage::ShouldCheckPeerHealth;
 use env_logger::{Builder as LoggerBuilder, Target};
-use futures::future::try_join_all;
 use log::{debug, info};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use service_network::config::{PeerConfig, PeerRole, BROKER_HEALTH_CHECK_INTERVAL};
 use service_network::peer::{my_ipv4_interfaces, SERVICE_PSN_BROKER};
 use service_network::runtime::AsyncRuntimeContext;
-use std::collections::HashMap;
+use service_network::utils::join_handles;
+use std::collections::{BTreeMap, HashMap};
 use std::net::Ipv4Addr;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::channel;
+use tokio::sync::RwLock;
 use tokio::time::sleep;
 
 #[macro_use]
@@ -33,6 +36,7 @@ lazy_static! {
         GIT_REVISION.to_string(),
     );
     pub static ref RT_CTX: AsyncRuntimeContext = AsyncRuntimeContext::new(CONFIG.clone());
+    pub static ref LW_MAP: WrappedLocalWorkerMap = Arc::new(RwLock::new(BTreeMap::new()));
 }
 
 #[tokio::main]
@@ -50,14 +54,14 @@ async fn main() {
 
     let (tx, rx) = channel::<LocalWorkerManagerChannelMessage>(1024);
 
-    let async_handles = vec![
+    join_handles(vec![
         tokio::spawn(broker()),
         tokio::spawn(outbound::start(&RT_CTX)),
         tokio::spawn(mgmt::start_server(tx.clone(), &RT_CTX, &CONFIG)),
         tokio::spawn(local_worker_manager(tx.clone(), rx)),
         tokio::spawn(check_peer_health_loop(tx.clone())),
-    ];
-    try_join_all(async_handles).await.expect("main failed");
+    ])
+    .await;
 }
 
 async fn broker() {
@@ -116,7 +120,7 @@ async fn register_service(mdns: &ServiceDaemon, _ctx: &AsyncRuntimeContext) {
 
 async fn check_peer_health_loop(tx: LocalWorkerManagerChannelMessageSender) {
     loop {
-        sleep(Duration::from_millis(BROKER_HEALTH_CHECK_INTERVAL as u64)).await;
+        sleep(Duration::from_millis(BROKER_HEALTH_CHECK_INTERVAL)).await;
         let _ = tx.clone().send(ShouldCheckPeerHealth).await;
     }
 }

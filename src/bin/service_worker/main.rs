@@ -3,14 +3,14 @@ pub mod runtime;
 use crate::runtime::*;
 use crate::WorkerRuntimeChannelMessage::*;
 use env_logger::{Builder as LoggerBuilder, Target};
-use futures::future::try_join_all;
-use log::{debug, info};
+use log::{debug, error, info};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use phactory_api::pruntime_client::{new_pruntime_client, PRuntimeClient};
 use service_network::config::{PeerConfig, PeerRole};
 use service_network::peer::local_worker::BrokerPeerUpdateSender;
 use service_network::peer::{my_ipv4_interfaces, SERVICE_PSN_LOCAL_WORKER};
 use service_network::runtime::AsyncRuntimeContext;
+use service_network::utils::join_handles;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 
@@ -30,7 +30,10 @@ lazy_static! {
     pub static ref RT_CTX: AsyncRuntimeContext = AsyncRuntimeContext::new(CONFIG.clone());
     pub static ref PRUNTIME_CLIENT: PRuntimeClient =
         new_pruntime_client(CONFIG.local_worker().pruntime_address.to_string());
-    pub static ref WR: WrappedWorkerRuntime = WorkerRuntime::new_wrapped(&RT_CTX, &PRUNTIME_CLIENT);
+    pub static ref MDNS: ServiceDaemon = { ServiceDaemon::new().expect("Failed to create daemon") };
+    pub static ref WR: WrappedWorkerRuntime =
+        WorkerRuntime::new_wrapped(&MDNS, &RT_CTX, &PRUNTIME_CLIENT);
+    pub static ref REQ_CLIENT: reqwest::Client = reqwest::Client::new();
 }
 
 #[tokio::main]
@@ -49,16 +52,16 @@ async fn main() {
     let (update_best_peer_tx, _) = tokio::sync::mpsc::channel(1024);
     let (rt_tx, rt_rx) = tokio::sync::mpsc::channel(1024);
 
-    let async_handles = vec![
+    join_handles(vec![
         tokio::spawn(handle_runtime_events(
             update_best_peer_tx.clone(),
             rt_tx.clone(),
             rt_rx,
         )),
         tokio::spawn(check_pruntime_health(rt_tx.clone())),
-    ];
-
-    try_join_all(async_handles).await.expect("main failed");
+        tokio::spawn(check_current_broker_health_loop(rt_tx.clone())),
+    ])
+    .await;
 }
 
 async fn handle_runtime_events(
@@ -98,15 +101,6 @@ async fn handle_runtime_events(
         }
     }
 }
-
-// async fn handle_peer_update(
-//     mut rx: BrokerPeerUpdateReceiver,
-//     rt_tx: WorkerRuntimeChannelMessageSender,
-// ) {
-//     while let Some(u) = rx.recv().await {
-//         let _ = rt_tx.clone().send(ShouldUpdateBrokerPeer(u)).await;
-//     }
-// }
 
 async fn register_service(mdns: &ServiceDaemon, _ctx: &AsyncRuntimeContext) {
     let common_config = &CONFIG.common;

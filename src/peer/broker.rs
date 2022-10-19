@@ -1,7 +1,7 @@
 use crate::peer::PeerStatus;
 use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
-use log::{trace};
+use log::trace;
 use mdns_sd::ServiceInfo;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -26,7 +26,7 @@ impl BrokerPeerManager {
             best_instance_name: None,
         }
     }
-    pub(crate) async fn update_peer_with_service_info(
+    pub async fn update_peer_with_service_info(
         &mut self,
         service_info: ServiceInfo,
         tx: BrokerPeerUpdateSender,
@@ -82,13 +82,6 @@ impl BrokerPeerManager {
         map.insert(instance_name.to_string(), new_peer.clone());
 
         Ok(())
-    }
-
-    fn get_cached_best(&self) -> Option<Arc<Mutex<BrokerPeer>>> {
-        match &self.best_instance_name {
-            Some(n) => Some(self.map.get(n).unwrap().clone()),
-            None => None,
-        }
     }
 
     pub async fn verify_best_instance(&mut self) -> Result<Option<WrappedBrokerPeer>> {

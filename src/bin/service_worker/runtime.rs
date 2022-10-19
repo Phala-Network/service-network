@@ -1,14 +1,22 @@
 use crate::WorkerRuntimeStatus::*;
-use crate::{ShouldLockBroker, ShouldSetBrokerFailed, ShouldUpdateStatus, RT_CTX, WR};
+use crate::{
+    ShouldLockBroker, ShouldSetBrokerFailed, ShouldUpdateStatus, CONFIG, REQ_CLIENT, RT_CTX, WR,
+};
 use anyhow::{anyhow, Context, Result};
-use log::{debug, info};
-use mdns_sd::ServiceDaemon;
+use log::{debug, error, info};
+use mdns_sd::{Error, ServiceDaemon};
 use phactory_api::prpc::{NetworkConfig, PhactoryInfo};
 use phactory_api::pruntime_client::PRuntimeClient;
 use service_network::peer::local_worker::{BrokerPeerUpdateSender, WrappedBrokerPeer};
 use service_network::runtime::AsyncRuntimeContext;
 use std::fmt::Debug;
 
+use reqwest::header::CONTENT_TYPE;
+use reqwest::Response;
+use service_network::config::LOCAL_WORKER_KEEPALIVE_INTERVAL;
+use service_network::mgmt_types::{LocalWorkerIdentity, MyIdentity, R_V0_LOCAL_WORKER_KEEPALIVE};
+use service_network::peer::{my_ipv4_interfaces, SERVICE_PSN_BROKER};
+use service_network::utils::CONTENT_TYPE_JSON;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
@@ -54,10 +62,17 @@ pub struct WorkerRuntime {
     pub public_key: Option<String>,
     pub best_broker: Option<WrappedBrokerPeer>,
     pub best_broker_name: Option<String>,
+    pub best_broker_mgmt_url: Option<String>,
+    pub keepalive_content: Option<String>,
+    pub mdns: &'static ServiceDaemon,
 }
 
 impl WorkerRuntime {
-    pub fn new(rt_ctx: &'static AsyncRuntimeContext, prc: &'static PRuntimeClient) -> Self {
+    pub fn new(
+        mdns: &'static ServiceDaemon,
+        rt_ctx: &'static AsyncRuntimeContext,
+        prc: &'static PRuntimeClient,
+    ) -> Self {
         Self {
             rt_ctx,
             prc,
@@ -69,14 +84,18 @@ impl WorkerRuntime {
             public_key: None,
             best_broker: None,
             best_broker_name: None,
+            best_broker_mgmt_url: None,
+            keepalive_content: None,
+            mdns,
         }
     }
 
     pub fn new_wrapped(
+        mdns: &'static ServiceDaemon,
         rt_ctx: &'static AsyncRuntimeContext,
         prc: &'static PRuntimeClient,
     ) -> WrappedWorkerRuntime {
-        Arc::new(RwLock::new(Self::new(rt_ctx, prc)))
+        Arc::new(RwLock::new(Self::new(mdns, rt_ctx, prc)))
     }
 
     pub async fn handle_update_info(
@@ -167,10 +186,37 @@ impl WorkerRuntime {
         let np = peer.clone();
         let np = np.lock().await;
         let name = np.instance_name.clone();
+        let best_broker_mgmt_url = np.mgmt_addr.clone();
+        let public_port = self.last_info.as_ref().unwrap();
+        let public_port = public_port.network_status.as_ref().unwrap();
+        let public_port = public_port.public_rpc_port.as_ref().unwrap().clone() as u16;
+
+        let fa = &CONFIG.local_worker().forwarder_bind_addresses;
+        let fa = fa.first().unwrap();
+        let fa: Vec<&str> = fa.split(":").collect();
+        let fap = fa.get(1).unwrap().to_string();
+        let fa = fa.get(0).unwrap().to_string();
+        let fa = if fa.eq("0.0.0.0") {
+            my_ipv4_interfaces().first().unwrap().ip.to_string()
+        } else {
+            fa
+        };
+        let address_string = format!("http://{}:{}", fa, fap);
+
+        let keepalive_content = LocalWorkerIdentity {
+            instance_name: np.instance_name.clone(),
+            instance_id: np.id.clone(),
+            address_string,
+            public_port,
+            public_key: self.public_key.as_ref().unwrap().to_string(),
+        };
         drop(np);
 
         self.best_broker = Some(peer.clone());
         self.best_broker_name = Some(name.clone());
+        self.best_broker_mgmt_url = Some(best_broker_mgmt_url);
+        self.keepalive_content = Some(serde_json::to_string(&keepalive_content).unwrap());
+
         let _ = rt_tx
             .clone()
             .send(ShouldUpdateStatus(PendingProvision))
@@ -195,14 +241,15 @@ impl WorkerRuntime {
                 info!("Staring worker runtime...");
             }
             WaitingForBroker => {
-                if !(self.peer_browser_started) {
-                    tokio::spawn(start_peer_browser(tx.clone(), &RT_CTX));
-                    self.peer_browser_started = true;
-                }
+                // if !(self.peer_browser_started) {
+                tokio::spawn(start_peer_browser(&self.mdns, tx.clone(), &RT_CTX));
+                self.peer_browser_started = true;
+                // }
                 sleep(Duration::from_secs(3)).await;
                 tokio::spawn(wait_for_broker_peer(rt_tx.clone()));
             }
             PendingProvision => {
+                stop_broker_browse(self.mdns).expect("Failed to stop broker browsing");
                 // todo: transition state left for sideVM
                 if let Err(e) = set_pruntime_network_with_peer(
                     (&self.best_broker).as_ref().unwrap().clone(),
@@ -295,7 +342,7 @@ pub async fn wait_for_broker_peer(rt_tx: WorkerRuntimeChannelMessageSender) {
     loop {
         let wr = WR.read().await;
         match wr.status {
-            WorkerRuntimeStatus::WaitingForBroker => {
+            WaitingForBroker => {
                 let pm = &RT_CTX.peer_manager.broker;
                 let mut pm = pm.lock().await;
                 let peer = pm.verify_best_instance().await;
@@ -308,7 +355,7 @@ pub async fn wait_for_broker_peer(rt_tx: WorkerRuntimeChannelMessageSender) {
                     if peer.is_some() {
                         let peer = peer.unwrap();
                         loop_num += 1;
-                        if loop_num >= 15 {
+                        if loop_num >= 5 {
                             let _ = rt_tx.clone().send(ShouldLockBroker(peer)).await;
                             return;
                         }
@@ -327,24 +374,36 @@ pub async fn wait_for_broker_peer(rt_tx: WorkerRuntimeChannelMessageSender) {
     }
 }
 
+pub fn stop_broker_browse(mdns: &ServiceDaemon) -> Result<()> {
+    let result = mdns.stop_browse(SERVICE_PSN_BROKER);
+    match result {
+        Ok(_) => Ok(()),
+        Err(err) => match err {
+            Error::Again => stop_broker_browse(mdns),
+            _ => Err(anyhow::Error::from(err)),
+        },
+    }
+}
+
 pub async fn check_pruntime_health(rt_tx: WorkerRuntimeChannelMessageSender) {
     info!("Starting pinging pRuntime for health check...");
     loop {
         let wr = WR.read().await;
         let duration = Duration::from_secs(match wr.status {
-            WorkerRuntimeStatus::Starting => 1,
-            WorkerRuntimeStatus::WaitingForBroker => 15,
-            WorkerRuntimeStatus::PendingProvision => 15,
-            WorkerRuntimeStatus::Started => 6,
-            WorkerRuntimeStatus::Failed(_) => 3,
+            Starting => 1,
+            WaitingForBroker => 15,
+            PendingProvision => 15,
+            Started => 6,
+            Failed(_) => 3,
         });
         drop(wr);
-
         sleep(duration).await;
+
         let wr = WR.read().await;
         let pr = wr.prc;
         let info = pr.get_info(()).await;
         drop(wr);
+
         match info {
             Ok(info) => {
                 let _ = rt_tx
@@ -364,11 +423,73 @@ pub async fn check_pruntime_health(rt_tx: WorkerRuntimeChannelMessageSender) {
     }
 }
 
-pub async fn start_peer_browser(tx: BrokerPeerUpdateSender, ctx: &AsyncRuntimeContext) {
-    let mdns = ServiceDaemon::new().expect("Failed to create daemon");
+pub async fn check_current_broker_health_loop(rt_tx: WorkerRuntimeChannelMessageSender) {
+    loop {
+        let wr = WR.read().await;
+        let status = wr.status.clone();
+        drop(wr);
+
+        match status {
+            PendingProvision => {
+                check_current_broker_health(rt_tx.clone()).await;
+            }
+            Started => {
+                check_current_broker_health(rt_tx.clone()).await;
+            }
+            _ => {}
+        };
+
+        sleep(Duration::from_millis(match status {
+            PendingProvision => LOCAL_WORKER_KEEPALIVE_INTERVAL,
+            Started => LOCAL_WORKER_KEEPALIVE_INTERVAL,
+            _ => 3000,
+        }))
+        .await;
+    }
+}
+
+pub async fn check_current_broker_health(rt_tx: WorkerRuntimeChannelMessageSender) {
+    let wr = WR.read().await;
+    let broker = wr.best_broker.as_ref().unwrap();
+    let broker = broker.lock().await;
+    let mut url = broker.mgmt_addr.clone();
+    let body = (&wr).keepalive_content.as_ref().unwrap().to_string();
+    drop(broker);
+    drop(wr);
+    url.push_str(R_V0_LOCAL_WORKER_KEEPALIVE);
+    let res = (&REQ_CLIENT)
+        .put(url)
+        .header(CONTENT_TYPE, CONTENT_TYPE_JSON)
+        .body(body)
+        .send()
+        .await;
+    match res {
+        Ok(res) => {
+            let res = res.json::<MyIdentity>().await;
+            match res {
+                Ok(res) => {
+                    info!("111 {:?}", res)
+                }
+                Err(err) => {
+                    error!("Broker failed on processing keepalive: {}", err)
+                }
+            }
+        }
+        Err(err) => {
+            error!("Failed to send keepalive to current broker: {}", err)
+        }
+    };
+}
+
+pub async fn start_peer_browser(
+    mdns: &ServiceDaemon,
+    tx: BrokerPeerUpdateSender,
+    ctx: &AsyncRuntimeContext,
+) {
     let pm = &RT_CTX.peer_manager;
-    crate::register_service(&mdns, &ctx).await;
-    pm.browse_brokers(&mdns, tx.clone(), &RT_CTX).await;
+    crate::register_service(mdns, &ctx).await;
+    pm.browse_brokers(mdns, tx.clone(), &RT_CTX).await;
+    debug!("Broker browsing stopped.");
 }
 
 async fn set_pruntime_network_with_peer(

@@ -1,25 +1,18 @@
 pub mod broker;
 pub mod local_worker;
 
-use crate::peer::broker::{BrokerPeerManager};
-
-
+use crate::config::{PeerConfig, PeerRole};
+use crate::peer::broker::BrokerPeerManager;
+use crate::runtime::AsyncRuntimeContext;
 use if_addrs::{IfAddr, Ifv4Addr};
-use log::{trace};
+use local_worker::{BrokerPeerUpdateSender, LocalPeerWorkerManager};
+use log::trace;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
-use std::collections::{HashMap};
-use std::fmt::{Debug};
-
-
+use std::collections::HashMap;
+use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
-
 use tokio::sync::{Mutex, RwLock};
-
-use crate::config::{PeerConfig, PeerRole};
-use crate::runtime::AsyncRuntimeContext;
-
-use local_worker::{BrokerPeerUpdateSender, LocalPeerWorkerManager};
 
 pub const SERVICE_PSN_LOCAL_WORKER: &str = "_psn-worker._tcp.local.";
 pub const SERVICE_PSN_BROKER: &str = "_psn-broker._tcp.local.";
@@ -101,6 +94,7 @@ impl PeerManager {
                     let _ = broker.update_peer_with_service_info(info, tx, ctx).await;
                     drop(broker);
                 }
+                ServiceEvent::SearchStopped(_) => return,
                 other_event => {
                     trace!("[browse_brokers] {:?}", &other_event);
                 }
