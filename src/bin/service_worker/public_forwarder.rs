@@ -22,12 +22,12 @@ pub async fn start_public_forwarder() -> () {
     let binds: Vec<JoinHandle<()>> = binds.collect();
     let result = try_join_all(binds).await;
     if result.is_err() {
-        panic!("{}", result.err().unwrap());
+        panic!("start_public_forwarder: {}", result.err().unwrap());
     }
 }
 
 async fn start_server(addr: String) {
-    info!("Starting public forwarder on {}.", addr);
+    info!("Starting public forwarder on {}.", &addr);
 
     let shared = Shared {};
 

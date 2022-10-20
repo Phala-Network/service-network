@@ -7,6 +7,7 @@ use crate::local_worker::{
     local_worker_manager, LocalWorkerManagerChannelMessage, LocalWorkerManagerChannelMessageSender,
     WrappedLocalWorkerMap,
 };
+use crate::query_forwarder::start_query_forwarder;
 use crate::LocalWorkerManagerChannelMessage::ShouldCheckPeerHealth;
 use env_logger::{Builder as LoggerBuilder, Target};
 use log::{debug, info};
@@ -38,6 +39,7 @@ lazy_static! {
     );
     pub static ref RT_CTX: AsyncRuntimeContext = AsyncRuntimeContext::new(CONFIG.clone());
     pub static ref LW_MAP: WrappedLocalWorkerMap = Arc::new(RwLock::new(BTreeMap::new()));
+    pub static ref REQ_CLIENT: reqwest::Client = reqwest::Client::new();
 }
 
 #[tokio::main]
@@ -59,6 +61,7 @@ async fn main() {
         tokio::spawn(broker()),
         tokio::spawn(outbound::start(&RT_CTX)),
         tokio::spawn(mgmt::start_server(tx.clone(), &RT_CTX, &CONFIG)),
+        tokio::spawn(start_query_forwarder()),
         tokio::spawn(local_worker_manager(tx.clone(), rx)),
         tokio::spawn(check_peer_health_loop(tx.clone())),
     ])
