@@ -136,6 +136,7 @@ fn update_local_worker(klw: &mut KnownLocalWorker, lw: LocalWorkerIdentity) {
     match klw.status.clone() {
         Active => {
             klw.lost_mark = false;
+            klw.lost_count = 0;
         }
         Lost => {
             klw.status = Active;

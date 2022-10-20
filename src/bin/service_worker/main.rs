@@ -1,9 +1,11 @@
+pub mod public_forwarder;
 pub mod runtime;
 
+use crate::public_forwarder::start_public_forwarder;
 use crate::runtime::*;
 use crate::WorkerRuntimeChannelMessage::*;
 use env_logger::{Builder as LoggerBuilder, Target};
-use log::{debug, error, info};
+use log::{debug, info};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use phactory_api::pruntime_client::{new_pruntime_client, PRuntimeClient};
 use service_network::config::{PeerConfig, PeerRole};
@@ -30,7 +32,7 @@ lazy_static! {
     pub static ref RT_CTX: AsyncRuntimeContext = AsyncRuntimeContext::new(CONFIG.clone());
     pub static ref PRUNTIME_CLIENT: PRuntimeClient =
         new_pruntime_client(CONFIG.local_worker().pruntime_address.to_string());
-    pub static ref MDNS: ServiceDaemon = { ServiceDaemon::new().expect("Failed to create daemon") };
+    pub static ref MDNS: ServiceDaemon = ServiceDaemon::new().expect("Failed to create daemon");
     pub static ref WR: WrappedWorkerRuntime =
         WorkerRuntime::new_wrapped(&MDNS, &RT_CTX, &PRUNTIME_CLIENT);
     pub static ref REQ_CLIENT: reqwest::Client = reqwest::Client::new();
@@ -58,6 +60,7 @@ async fn main() {
             rt_tx.clone(),
             rt_rx,
         )),
+        tokio::spawn(start_public_forwarder()),
         tokio::spawn(check_pruntime_health(rt_tx.clone())),
         tokio::spawn(check_current_broker_health_loop(rt_tx.clone())),
     ])

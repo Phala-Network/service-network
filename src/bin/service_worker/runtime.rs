@@ -7,20 +7,19 @@ use log::{debug, error, info};
 use mdns_sd::{Error, ServiceDaemon};
 use phactory_api::prpc::{NetworkConfig, PhactoryInfo};
 use phactory_api::pruntime_client::PRuntimeClient;
-use service_network::peer::local_worker::{BrokerPeerUpdateSender, WrappedBrokerPeer};
-use service_network::runtime::AsyncRuntimeContext;
-use std::fmt::Debug;
-
 use reqwest::header::CONTENT_TYPE;
-use reqwest::Response;
 use service_network::config::LOCAL_WORKER_KEEPALIVE_INTERVAL;
 use service_network::mgmt_types::{LocalWorkerIdentity, MyIdentity, R_V0_LOCAL_WORKER_KEEPALIVE};
+use service_network::peer::local_worker::{BrokerPeerUpdateSender, WrappedBrokerPeer};
 use service_network::peer::{my_ipv4_interfaces, SERVICE_PSN_BROKER};
+use service_network::runtime::AsyncRuntimeContext;
 use service_network::utils::CONTENT_TYPE_JSON;
+use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
+use urlparse::urlparse;
 
 #[derive(Debug, Clone)]
 pub enum WorkerRuntimeChannelMessage {
@@ -58,6 +57,8 @@ pub struct WorkerRuntime {
     pub initial_info: Option<PhactoryInfo>,
     pub last_info: Option<PhactoryInfo>,
     pub pr_rpc_port: u32,
+    pub pruntime_hostname: String,
+    pub pruntime_rpc_prefix: String,
     pub peer_browser_started: bool,
     pub public_key: Option<String>,
     pub best_broker: Option<WrappedBrokerPeer>,
@@ -80,6 +81,8 @@ impl WorkerRuntime {
             initial_info: None,
             last_info: None,
             pr_rpc_port: 0,
+            pruntime_hostname: "".to_string(),
+            pruntime_rpc_prefix: "".to_string(),
             peer_browser_started: false,
             public_key: None,
             best_broker: None,
@@ -106,55 +109,63 @@ impl WorkerRuntime {
         let ir = (&info).clone();
         let current_status = (&self.status).clone();
 
-        let initialized = &ir.initialized;
-        let initialized = *initialized;
-        if !initialized {
-            let _ = rt_tx
-                .clone()
-                .send(WorkerRuntimeChannelMessage::ShouldSetPRuntimeFailed(
-                    "pRuntime not initialized!".to_string(),
-                ))
-                .await;
-            return;
-        }
-
-        let public_key = &ir.public_key;
-        if public_key.is_none() {
-            let _ = rt_tx
-                .clone()
-                .send(WorkerRuntimeChannelMessage::ShouldSetPRuntimeFailed(
-                    "pRuntime has invalid public key!".to_string(),
-                ))
-                .await;
-        }
-        let public_key = public_key.as_ref().unwrap().to_string();
-
-        let pr_rpc_port = &ir.network_status.unwrap_or_default();
-        let pr_rpc_port = pr_rpc_port.public_rpc_port;
-        if pr_rpc_port.is_none() {
-            self.pr_rpc_port = 0;
-            let rt_tx = rt_tx.clone();
-            let _ = rt_tx
-                .clone()
-                .send(WorkerRuntimeChannelMessage::ShouldSetPRuntimeFailed(
-                    "Public port not enabled in pRuntime!".to_string(),
-                ))
-                .await;
-            return;
-        }
-
-        self.public_key = Some(public_key);
-        self.pr_rpc_port = pr_rpc_port.unwrap();
-        self.last_info = Some(info.clone());
-
         match current_status {
             Starting => {
-                self.initial_info = Some(info);
+                self.pruntime_hostname =
+                    urlparse(CONFIG.local_worker().pruntime_address.to_string())
+                        .hostname
+                        .unwrap();
+
+                let initialized = &ir.initialized;
+                let initialized = *initialized;
+                if !initialized {
+                    let _ = rt_tx
+                        .clone()
+                        .send(WorkerRuntimeChannelMessage::ShouldSetPRuntimeFailed(
+                            "pRuntime not initialized!".to_string(),
+                        ))
+                        .await;
+                    return;
+                }
+
+                let pr_rpc_port = &ir.network_status.unwrap_or_default();
+                let pr_rpc_port = pr_rpc_port.public_rpc_port;
+                if pr_rpc_port.is_none() {
+                    self.pr_rpc_port = 0;
+                    let rt_tx = rt_tx.clone();
+                    let _ = rt_tx
+                        .clone()
+                        .send(WorkerRuntimeChannelMessage::ShouldSetPRuntimeFailed(
+                            "Public port not enabled in pRuntime!".to_string(),
+                        ))
+                        .await;
+                    return;
+                }
+                self.pr_rpc_port = pr_rpc_port.unwrap();
+                self.pruntime_rpc_prefix = format!(
+                    "http://{}:{}/prpc/PhactoryAPI.ContractQuery",
+                    self.pruntime_hostname, self.pr_rpc_port
+                );
+
+                let public_key = &ir.public_key;
+                if public_key.is_none() {
+                    let _ = rt_tx
+                        .clone()
+                        .send(WorkerRuntimeChannelMessage::ShouldSetPRuntimeFailed(
+                            "pRuntime has invalid public key!".to_string(),
+                        ))
+                        .await;
+                    return;
+                }
+                let public_key = public_key.as_ref().unwrap().to_string();
+                self.public_key = Some(public_key);
+
                 let rt_tx = rt_tx.clone();
                 let _ = rt_tx
                     .clone()
                     .send(ShouldUpdateStatus(WaitingForBroker))
                     .await;
+                self.initial_info = Some(info.clone());
             }
             Failed(_) => {
                 info!("Trying to recover from failure in 6s...");
@@ -163,6 +174,7 @@ impl WorkerRuntime {
             }
             _ => {}
         }
+        self.last_info = Some(info);
     }
 
     pub async fn recover_from_failure(&self, rt_tx: WorkerRuntimeChannelMessageSender) {
