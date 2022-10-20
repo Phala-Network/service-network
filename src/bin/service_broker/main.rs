@@ -1,6 +1,7 @@
-mod local_worker;
-mod mgmt;
-mod outbound;
+pub mod local_worker;
+pub mod mgmt;
+pub mod outbound;
+pub mod query_forwarder;
 
 use crate::local_worker::{
     local_worker_manager, LocalWorkerManagerChannelMessage, LocalWorkerManagerChannelMessageSender,

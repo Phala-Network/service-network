@@ -50,7 +50,7 @@ fn create_router() -> Router {
     router
 }
 
-async fn forwarder(Extension(shared): Extension<Arc<Shared>>, body: Bytes) -> impl IntoResponse {
+async fn forwarder(body: Bytes) -> impl IntoResponse {
     let wr = WR.read().await;
     let status = wr.status.clone();
     drop(wr);

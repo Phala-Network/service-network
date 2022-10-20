@@ -336,12 +336,10 @@ impl WorkerRuntime {
             _ => {
                 let _ = rt_tx
                     .clone()
-                    .send(WorkerRuntimeChannelMessage::ShouldUpdateStatus(
-                        WorkerRuntimeStatus::Failed(WorkerRuntimeFailReason {
-                            broker: None,
-                            pr: Some(msg),
-                        }),
-                    ))
+                    .send(ShouldUpdateStatus(Failed(WorkerRuntimeFailReason {
+                        broker: None,
+                        pr: Some(msg),
+                    })))
                     .await;
             }
         };
