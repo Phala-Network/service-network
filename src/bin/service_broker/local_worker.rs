@@ -5,12 +5,10 @@ use log::{debug, error, info, warn};
 use service_network::config::{BROKER_PEER_DEAD_COUNT, BROKER_PEER_LOST_COUNT};
 use service_network::mgmt_types::LocalWorkerIdentity;
 use std::collections::BTreeMap;
-use std::net::Ipv4Addr;
-use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
-use urlparse::{urlparse, GetQuery};
+use urlparse::urlparse;
 
 pub enum LocalWorkerManagerChannelMessage {
     ShouldCheckPeerHealth,
