@@ -11,11 +11,31 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v3
-      - run: docker
-      - name: Build the Docker image
-        run: docker build . --file Dockerfile --tag ghcr.io/Phala-Network/service-network:${{ github.sha }}
-      - run: docker tag ghcr.io/Phala-Network/service-network:${{ github.sha }} ghcr.io/Phala-Network/service-network:$(date +%s)
-      - run: docker tag ghcr.io/Phala-Network/service-network:${{ github.sha }} ghcr.io/Phala-Network/service-network:latest
-      - run: docker push ghcr.io/Phala-Network/service-network:${{ github.sha }}
-      - run: docker push ghcr.io/Phala-Network/service-network:$(date +%s)
-      - run: docker push ghcr.io/Phala-Network/service-network:latest
+      -
+        name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.PACKAGE_MANAGER_USERNAME }}
+          password: ${{ secrets.PACKAGE_MANAGER_TOKEN }}
+      -
+        name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      -
+        name: Build and push
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            phalanetwork/service-network:git-${{ github.sha }}
+            phalanetwork/service-network:latest
+            ghcr.io/phala-network/service-network:git-${{ github.sha }}
+            ghcr.io/phala-network/service-network:latest
