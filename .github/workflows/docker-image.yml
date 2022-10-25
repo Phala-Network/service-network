@@ -35,7 +35,7 @@ jobs:
           file: ./Dockerfile
           push: true
           build_args: |
-            revision=${{ PROJECT_GIT_REVISION }}
+            revision=${{ github.sha }}
           tags: |
             phalanetwork/service-network:git-${{ github.sha }}
             phalanetwork/service-network:latest
