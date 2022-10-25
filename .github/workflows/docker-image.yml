@@ -1,0 +1,21 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "master", "ci" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v3
+      - run: docker
+      - name: Build the Docker image
+        run: docker build . --file Dockerfile --tag ghcr.io/Phala-Network/service-network:${{ github.sha }}
+      - run: docker tag ghcr.io/Phala-Network/service-network:${{ github.sha }} ghcr.io/Phala-Network/service-network:$(date +%s)
+      - run: docker tag ghcr.io/Phala-Network/service-network:${{ github.sha }} ghcr.io/Phala-Network/service-network:latest
+      - run: docker push ghcr.io/Phala-Network/service-network:${{ github.sha }}
+      - run: docker push ghcr.io/Phala-Network/service-network:$(date +%s)
+      - run: docker push ghcr.io/Phala-Network/service-network:latest
