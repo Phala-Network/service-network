@@ -172,7 +172,7 @@ fn default_doh_server_dns_name() -> String {
 }
 
 fn default_pruntime_address() -> String {
-    "http://127.0.0.1:8080".to_string()
+    "http://127.0.0.1:8000".to_string()
 }
 
 fn default_forwarder_bind_addresses() -> Vec<String> {
