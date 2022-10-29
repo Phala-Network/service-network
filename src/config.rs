@@ -111,6 +111,7 @@ pub struct BrokerConfig {
     pub outbound_bind_addresses: Vec<String>,
     #[serde(default = "default_inbound_http_server_bind_address")]
     pub inbound_http_server_bind_address: Vec<String>,
+    #[serde(default = "default_inbound_http_server_accessible_address_prefix")]
     pub inbound_http_server_accessible_address_prefix: String,
     #[serde(default = "default_cost")]
     pub cost: u8,
@@ -144,6 +145,13 @@ fn default_mgmt_port() -> u16 {
 
 fn default_outbound_bind_addresses() -> Vec<String> {
     vec!["0.0.0.0:1981".to_string()]
+}
+
+fn default_inbound_http_server_accessible_address_prefix() -> String {
+    format!(
+        "http://{}:19810",
+        hostname::get().unwrap().to_str().unwrap()
+    )
 }
 
 fn default_inbound_http_server_bind_address() -> Vec<String> {

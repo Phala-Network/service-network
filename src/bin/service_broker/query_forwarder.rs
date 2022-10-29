@@ -2,7 +2,7 @@ use crate::local_worker::KnownLocalWorkerStatus;
 use crate::{CONFIG, LW_MAP, REQ_CLIENT};
 use axum::extract::Path;
 use axum::http::header::CONTENT_TYPE;
-use axum::http::StatusCode;
+use axum::http::{Method, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::post;
 use axum::{Extension, Router};
@@ -13,6 +13,7 @@ use log::{debug, info, warn};
 use service_network::utils::CONTENT_TYPE_BIN;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
+use tower_http::cors::{Any, CorsLayer};
 
 pub struct Shared {}
 
@@ -36,6 +37,7 @@ async fn start_server(addr: String) {
     let addr = &addr.parse().unwrap();
     let router = create_router();
 
+    let router = router.layer(CorsLayer::new().allow_methods([Method::GET, Method::POST]).allow_origin(Any));
     let router = router.layer(Extension(Arc::new(shared)));
 
     Server::bind(addr)
@@ -49,6 +51,8 @@ fn create_router() -> Router {
 
     let router = router.route("/query/:pr_public_key", post(forwarder));
     let router = router.route("/query/0x:pr_public_key", post(forwarder));
+    let router = router.route("/query/:pr_public_key/prpc/PhactoryAPI.GetInfo", post(forwarder));
+    let router = router.route("/query/0x:pr_public_key/prpc/PhactoryAPI.GetInfo", post(forwarder));
 
     router
 }
