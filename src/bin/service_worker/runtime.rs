@@ -1,11 +1,12 @@
 use crate::WorkerRuntimeStatus::*;
 use crate::{
-    ShouldLockBroker, ShouldSetBrokerFailed, ShouldUpdateStatus, CONFIG, REQ_CLIENT, RT_CTX, WR,
+    ShouldLockBroker, ShouldSetBrokerFailed, ShouldUpdateStatus, CONFIG, PRUNTIME_CLIENT,
+    REQ_CLIENT, RT_CTX, WR,
 };
 use anyhow::{anyhow, Context, Result};
 use log::{debug, error, info};
 use mdns_sd::{Error, ServiceDaemon};
-use phactory_api::prpc::{NetworkConfig, PhactoryInfo};
+use phactory_api::prpc::{NetworkConfig, NetworkConfigResponse, PhactoryInfo};
 use phactory_api::pruntime_client::PRuntimeClient;
 use reqwest::header::CONTENT_TYPE;
 use service_network::config::LOCAL_WORKER_KEEPALIVE_INTERVAL;
@@ -66,6 +67,7 @@ pub struct WorkerRuntime {
     pub best_broker_mgmt_url: Option<String>,
     pub keepalive_content: Option<String>,
     pub mdns: &'static ServiceDaemon,
+    pub network_status: Option<NetworkConfigResponse>,
 }
 
 impl WorkerRuntime {
@@ -90,6 +92,7 @@ impl WorkerRuntime {
             best_broker_mgmt_url: None,
             keepalive_content: None,
             mdns,
+            network_status: None,
         }
     }
 
@@ -128,8 +131,23 @@ impl WorkerRuntime {
                     return;
                 }
 
-                let pr_rpc_port = &ir.network_status.unwrap_or_default();
-                let pr_rpc_port = pr_rpc_port.public_rpc_port;
+                let network_status = self.prc.get_network_config(()).await;
+                if network_status.is_err() {
+                    self.network_status = None;
+                    let rt_tx = rt_tx.clone();
+                    let _ = rt_tx
+                        .clone()
+                        .send(WorkerRuntimeChannelMessage::ShouldSetPRuntimeFailed(
+                            format!("{:?}", network_status.unwrap_err()),
+                        ))
+                        .await;
+                    return;
+                }
+                let network_status = network_status.unwrap();
+                let pr_rpc_port = network_status.public_rpc_port;
+
+                self.network_status = Some(network_status);
+
                 if pr_rpc_port.is_none() {
                     self.pr_rpc_port = 0;
                     let rt_tx = rt_tx.clone();
@@ -142,10 +160,8 @@ impl WorkerRuntime {
                     return;
                 }
                 self.pr_rpc_port = pr_rpc_port.unwrap();
-                self.pruntime_rpc_prefix = format!(
-                    "http://{}:{}/prpc/PhactoryAPI.ContractQuery",
-                    self.pruntime_hostname, self.pr_rpc_port
-                );
+                self.pruntime_rpc_prefix =
+                    format!("http://{}:{}", self.pruntime_hostname, self.pr_rpc_port);
 
                 let public_key = &ir.public_key;
                 if public_key.is_none() {
@@ -158,6 +174,7 @@ impl WorkerRuntime {
                     return;
                 }
                 let public_key = public_key.as_ref().unwrap().to_string();
+                info!("Initialized for worker 0x{}", &public_key);
                 self.public_key = Some(public_key);
 
                 let rt_tx = rt_tx.clone();
@@ -199,8 +216,7 @@ impl WorkerRuntime {
         let np = np.lock().await;
         let name = np.instance_name.clone();
         let best_broker_mgmt_url = np.mgmt_addr.clone();
-        let public_port = self.last_info.as_ref().unwrap();
-        let public_port = public_port.network_status.as_ref().unwrap();
+        let public_port = self.network_status.as_ref().unwrap();
         let public_port = public_port.public_rpc_port.as_ref().unwrap().clone() as u16;
 
         let fa = &CONFIG.local_worker().forwarder_bind_addresses;

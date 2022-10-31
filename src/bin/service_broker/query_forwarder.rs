@@ -37,7 +37,11 @@ async fn start_server(addr: String) {
     let addr = &addr.parse().unwrap();
     let router = create_router();
 
-    let router = router.layer(CorsLayer::new().allow_methods([Method::GET, Method::POST]).allow_origin(Any));
+    let router = router.layer(
+        CorsLayer::new()
+            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+            .allow_origin(Any),
+    );
     let router = router.layer(Extension(Arc::new(shared)));
 
     Server::bind(addr)
@@ -49,16 +53,20 @@ async fn start_server(addr: String) {
 fn create_router() -> Router {
     let router = Router::new();
 
-    let router = router.route("/query/:pr_public_key", post(forwarder));
-    let router = router.route("/query/0x:pr_public_key", post(forwarder));
-    let router = router.route("/query/:pr_public_key/prpc/PhactoryAPI.GetInfo", post(forwarder));
-    let router = router.route("/query/0x:pr_public_key/prpc/PhactoryAPI.GetInfo", post(forwarder));
+    let router = router.route("/:pr_public_key/prpc/PhactoryAPI.:method", post(forwarder));
+    let router = router.route(
+        "/0x:pr_public_key/prpc/PhactoryAPI.:method",
+        post(forwarder),
+    );
 
     router
 }
 
-async fn forwarder(Path(pr_public_key): Path<String>, body: Bytes) -> impl IntoResponse {
-    debug!("Incoming query for {}", pr_public_key);
+async fn forwarder(
+    Path((pr_public_key, method)): Path<(String, String)>,
+    body: Bytes,
+) -> impl IntoResponse {
+    debug!("Incoming query for {}/{}", pr_public_key, method);
     let lw_map = LW_MAP.clone();
     let lw_map = lw_map.read().await;
     let lw = lw_map.get(&pr_public_key);
@@ -71,10 +79,10 @@ async fn forwarder(Path(pr_public_key): Path<String>, body: Bytes) -> impl IntoR
 
     match lw.status {
         KnownLocalWorkerStatus::Active => {
-            let url = format!("http://{}:{}/", &lw.hostname, &lw.forwarder_port);
+            let url = format!("http://{}:{}/{}", &lw.hostname, &lw.forwarder_port, method);
             debug!(
-                "Incoming query matched for local worker ({}/{}) as {}",
-                &lw.instance_name, &pr_public_key, &url
+                "Incoming query matched for local worker ({}/{}/{}), forwarding to {}",
+                &lw.instance_name, &pr_public_key, method, &url
             );
             let req = REQ_CLIENT
                 .post(url)

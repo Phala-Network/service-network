@@ -1,16 +1,24 @@
 use crate::{WorkerRuntimeStatus, CONFIG, REQ_CLIENT, WR};
+use axum::extract::Path;
 use axum::response::IntoResponse;
 use axum::routing::post;
 use axum::{Extension, Router};
 use bytes::Bytes;
 use futures::future::try_join_all;
 use hyper::Server;
-use log::{info, warn};
+use log::{debug, info, warn};
+use phactory_api::prpc::server::ProtoError;
+use phactory_api::prpc::Message;
+use prost::DecodeError;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;
 use service_network::utils::CONTENT_TYPE_BIN;
+use std::iter::Iterator;
+use std::string::{String, ToString};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
+
+pub static ALLOWED_METHODS: &[&'static str] = &["GetInfo", "ContractQuery"];
 
 pub struct Shared {}
 
@@ -45,23 +53,28 @@ async fn start_server(addr: String) {
 fn create_router() -> Router {
     let router = Router::new();
 
-    let router = router.route("/", post(forwarder));
+    let router = router.route("/:method", post(forwarder));
 
     router
 }
 
-async fn forwarder(body: Bytes) -> impl IntoResponse {
+async fn forwarder(Path(method): Path<String>, body: Bytes) -> impl IntoResponse {
     let wr = WR.read().await;
     let status = wr.status.clone();
     drop(wr);
 
     match status {
         WorkerRuntimeStatus::Started => {
+            if !(ALLOWED_METHODS.contains(&method.as_str())) {
+                debug!("Filtered disallowed method {}", method);
+                return (StatusCode::NOT_FOUND, Bytes::new());
+            }
+
             let wr = WR.read().await;
-            let url = &wr.pruntime_rpc_prefix.clone();
+            let url = format!("{}/prpc/PhactoryAPI.{}", &wr.pruntime_rpc_prefix, method);
             drop(wr);
             let req = REQ_CLIENT
-                .post(url)
+                .post(url.clone())
                 .header(CONTENT_TYPE, CONTENT_TYPE_BIN)
                 .body(body)
                 .send()
@@ -69,8 +82,31 @@ async fn forwarder(body: Bytes) -> impl IntoResponse {
             match req {
                 Ok(res) => {
                     let status = res.status() as StatusCode;
-                    let ret_bytes = res.bytes().await.unwrap_or_default();
-                    (status, ret_bytes)
+                    if status.eq(&StatusCode::OK) {
+                        (status, res.bytes().await.unwrap_or_default())
+                    } else if status.eq(&StatusCode::BAD_REQUEST) {
+                        let buffer = res.bytes().await.unwrap_or_default();
+                        let decoded: Result<ProtoError, DecodeError> =
+                            Message::decode(buffer.clone());
+                        if decoded.is_err() {
+                            debug!(
+                                "Filtered invalid server error from {}: {}",
+                                url,
+                                String::from_utf8_lossy(&buffer)
+                            );
+                            (status, Bytes::new())
+                        } else {
+                            (status, buffer)
+                        }
+                    } else {
+                        debug!(
+                            "Error {} from {}: {}",
+                            status,
+                            url,
+                            res.text().await.unwrap_or_default()
+                        );
+                        (status, Bytes::new())
+                    }
                 }
                 Err(err) => {
                     warn!("Failed to forward request to pRuntime: {:?}", err);
