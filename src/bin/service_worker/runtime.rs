@@ -1,7 +1,6 @@
 use crate::WorkerRuntimeStatus::*;
 use crate::{
-    ShouldLockBroker, ShouldSetBrokerFailed, ShouldUpdateStatus, CONFIG, PRUNTIME_CLIENT,
-    REQ_CLIENT, RT_CTX, WR,
+    ShouldLockBroker, ShouldSetBrokerFailed, ShouldUpdateStatus, CONFIG, REQ_CLIENT, RT_CTX, WR,
 };
 use anyhow::{anyhow, Context, Result};
 use log::{debug, error, info};
@@ -9,6 +8,7 @@ use mdns_sd::{Error, ServiceDaemon};
 use phactory_api::prpc::{NetworkConfig, NetworkConfigResponse, PhactoryInfo};
 use phactory_api::pruntime_client::PRuntimeClient;
 use reqwest::header::CONTENT_TYPE;
+use semver::{Version, VersionReq};
 use service_network::config::LOCAL_WORKER_KEEPALIVE_INTERVAL;
 use service_network::mgmt_types::{LocalWorkerIdentity, MyIdentity, R_V0_LOCAL_WORKER_KEEPALIVE};
 use service_network::peer::local_worker::{BrokerPeerUpdateSender, WrappedBrokerPeer};
@@ -21,6 +21,8 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 use urlparse::urlparse;
+
+const PRUNTIME_VERSION_REQ: &str = ">=2.0.0";
 
 #[derive(Debug, Clone)]
 pub enum WorkerRuntimeChannelMessage {
@@ -118,6 +120,22 @@ impl WorkerRuntime {
                     urlparse(CONFIG.local_worker().pruntime_address.to_string())
                         .hostname
                         .unwrap();
+
+                let version_req = VersionReq::parse(PRUNTIME_VERSION_REQ).unwrap();
+                let version = Version::parse(&ir.version).unwrap();
+                if !(version_req.matches(&version)) {
+                    error!(
+                        "pRuntime version unsupported! Requires {}, found {}.",
+                        PRUNTIME_VERSION_REQ, &ir.version
+                    );
+                    let _ = rt_tx
+                        .clone()
+                        .send(WorkerRuntimeChannelMessage::ShouldSetPRuntimeFailed(
+                            "pRuntime version unsupported!".to_string(),
+                        ))
+                        .await;
+                    return;
+                }
 
                 let initialized = &ir.initialized;
                 let initialized = *initialized;

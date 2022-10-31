@@ -4351,6 +4351,7 @@ dependencies = [
  "rand 0.8.5",
  "reqwest",
  "rust-fsm",
+ "semver 1.0.14",
  "serde",
  "serde_json",
  "tokio",

@@ -33,5 +33,6 @@ trust-dns-resolver = { version = "0.22.0", features = ["dns-over-https-rustls"] 
 rust-fsm = "0.6.0"
 urlparse = "0.7.3"
 tower-http = { version = "0.3.4", features = ["cors"] }
+semver = "1.0.14"
 
 [workspace]
